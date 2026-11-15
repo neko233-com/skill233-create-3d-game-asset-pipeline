@@ -12,6 +12,10 @@ import (
 )
 
 const (
+	// BlenderVersion is the ONLY supported Blender target (AGENTS.md / SPEC.md
+	// §2). Do not widen this to a range: every bpy module in scripts/blender
+	// is written against 5.2's API surface, and asset.json validation rejects
+	// anything else.
 	BlenderVersion = "5.2"
 	TripoURL       = "https://studio.tripo3d.com/"
 	DefaultGo      = "1.27"

@@ -1,0 +1,37 @@
+# Cross-platform line-ending + binary policy (SPEC.md §2, AGENTS.md).
+#
+# The pipeline runs on Windows / Linux / macOS from the same commit: shell and
+# Python entry points MUST be LF or Unix shebangs break ("bad interpreter"),
+# while generated binary deliverables must never be text-normalised.
+* text=auto eol=lf
+
+*.go    text eol=lf
+*.py    text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+Makefile     text eol=lf
+.gitignore   text eol=lf
+.gitattributes text eol=lf
+*.sh    text eol=lf
+
+# Windows-only launchers keep CRLF.
+*.ps1   text eol=crlf
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# Generated / imported 3D artefacts: never diff, never convert.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.tga   binary
+*.exr   binary
+*.blend  binary
+*.blend1 binary
+*.fbx   binary
+*.glb   binary
+*.gltf  text eol=lf
+*.obj   text eol=lf
+*.mtl   text eol=lf
+coverage.out binary

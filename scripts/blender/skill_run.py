@@ -15,7 +15,7 @@ publishes.
 
 Runs with Blender 5.2's bundled Python (bpy + stdlib only), --factory-startup
 safe, and also under testing/fake_blender.py (mock_bpy) for automatic tests.
-See SPEC.md §3B, skills/README.md, testing/test_skills.py.
+See SPEC.md §8A, skills/README.md, docs/90-skills.md, testing/test_skills.py.
 """
 
 import json

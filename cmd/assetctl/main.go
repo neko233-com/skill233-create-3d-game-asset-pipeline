@@ -409,7 +409,7 @@ func cmdDoctor(args []string) error {
 	return nil
 }
 
-// cmdSkills exposes the 28 registered Blender workflows (SPEC.md §3B).
+// cmdSkills exposes the 28 registered Blender workflows (SPEC.md §8A).
 func cmdSkills(args []string) error {
 	if len(args) == 0 {
 		fmt.Print(`usage: assetctl skills <list|show|run|doctor> [flags]
