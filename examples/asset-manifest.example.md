@@ -43,7 +43,7 @@
 
 ## 测试 / CI
 
-`go test ./...` 本身就是完整的自动化验证（无需安装 Blender 5.2）：`internal/runner` 的 `ScriptLauncher` 运行 `testing/fake_blender.py`（纯标准库 `bpy` / `mathutils` 模拟器，写 JSON 快照 + 真实 PNG）端到端跑通六阶段。`scripts/verify.py` 一键跑 `go build` / `go vet` / `go test` / `py_compile` / `python -m unittest discover -s testing`；`.github/workflows/ci.yml` 为 3-OS 矩阵。默认供应商在 CI 用 `--handoff fixture` 无人值守。
+`go test ./...` 本身就是完整的自动化验证（无需安装 Blender 5.2）：`internal/runner` 的 `ScriptLauncher` 运行 `testing/fake_blender.py`（纯标准库 `bpy` / `mathutils` 模拟器，写 JSON 快照 + 真实 PNG）端到端跑通六阶段。`scripts/verify.py` 一键跑 `go build` / `go vet` / `go test` / `py_compile` / `python -m unittest discover -s testing`；本仓库不使用 CI 服务，`assetctl verify` 在本地跑。默认供应商在无人值守场景用 `--handoff fixture`。
 
 ## 命令回放
 

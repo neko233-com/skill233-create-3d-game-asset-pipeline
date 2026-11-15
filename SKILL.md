@@ -25,6 +25,7 @@ description: 游戏美术管线向的 3D 游戏资产生产流水线：Go 1.27 �
 | Blender 内部六阶段脚本 | **Blender 5.2 原生内置 `bpy`** |
 | 系统 Python 3.14.3 | 仅开发辅助（`py_compile` / 测试），不进交付流水线 |
 | Tripo | **https://studio.tripo3d.com/** （**默认供应商 / DEFAULT**） |
+| 宿主平台 | **Windows x86_64**（`GOOS=windows GOARCH=amd64`；无 CI 服务，禁止 GitHub Actions） |
 | 目标引擎 | Unity（URP） |
 
 > 术语：**供应商（Supplier）== 建模策略（Strategy）**，指「阶段 1 由谁产出原始网格」；Go `Strategy` 类型与 `asset.json.strategy` 字段保持原名，不重命名。
@@ -78,7 +79,7 @@ description: 游戏美术管线向的 3D 游戏资产生产流水线：Go 1.27 �
 go build ./... && go vet ./... && go test ./...   # 含非 dry-run 六阶段 E2E
 python -m unittest discover -s testing           # 11 个 bpy 模块 + 28 skills + 契约 + mock_bpy
 python scripts/verify.py                         # 兼容 shim，实际转调 Go 的 assetctl verify
-go run ./cmd/assetctl verify                     # 一键生产级验证（推荐，12 步）
+go run ./cmd/assetctl verify                     # 一键生产级验证（推荐，13 步）
 
 # 查看供应商 / 六阶段 / 工具链
 go run ./cmd/assetctl strategies                 # tripo 标注 DEFAULT

@@ -22,7 +22,7 @@ import (
 	"github.com/neko233-com/skill233-create-3d-game-asset-pipeline/internal/verify"
 )
 
-const version = "assetctl 2.2.0 (go1.27, blender5.2, tripo=https://studio.tripo3d.com/, default-supplier=tripo, skills=28)"
+const version = "assetctl 2.3.0 (go1.27, blender5.2, target=windows/amd64, tripo=https://studio.tripo3d.com/, default-supplier=tripo, skills=28)"
 
 // reorderFlags moves leading flag tokens (and their values) ahead of the
 // positional arguments so Go's flag.FlagSet can parse them regardless of
@@ -365,13 +365,14 @@ func cmdDoctor(args []string) error {
 		return err
 	}
 	fmt.Println("[doctor] assetctl toolchain report")
-	fmt.Printf("  Go version        : %s (target %s)\n", runtime.Version(), config.DefaultGo)
+	fmt.Printf("  Go version        : %s (language target %s)\n", runtime.Version(), config.DefaultGo)
+	fmt.Printf("  Host platform     : %s/%s (release target windows/amd64)\n", runtime.GOOS, runtime.GOARCH)
 	fmt.Printf("  Blender version   : %s (required)\n", config.BlenderVersion)
 	exe, err := runner.FindBlender("")
 	if err != nil {
 		fmt.Printf("  Blender executable: WARN not found (%v)\n", err)
 		fmt.Println("                       production `assetctl run` needs Blender 5.2;")
-		fmt.Println("                       `go test ./...` / CI use ScriptLauncher (fake_blender.py).")
+		fmt.Println("                       `go test ./...` / `assetctl verify` use ScriptLauncher (fake_blender.py).")
 	} else {
 		fmt.Printf("  Blender executable: OK %s\n", exe)
 	}

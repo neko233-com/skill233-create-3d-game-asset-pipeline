@@ -8,6 +8,7 @@ package verify
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -30,6 +31,33 @@ func touch(t *testing.T, p string) {
 	}
 	if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCheckPlatform(t *testing.T) {
+	t.Setenv("ASSETCTL_VERIFY_ALLOW_ANY_OS", "")
+	if runtime.GOOS != TargetOS || runtime.GOARCH != TargetArch {
+		// Running on a non-target host: the guard MUST refuse, and the escape
+		// hatch MUST lift it.
+		err := checkPlatform()
+		if err == nil {
+			t.Fatalf("guard must fail on %s/%s", runtime.GOOS, runtime.GOARCH)
+		}
+		if !strings.Contains(err.Error(), TargetOS) || !strings.Contains(err.Error(), TargetArch) {
+			t.Fatalf("error must name the target platform, got %v", err)
+		}
+		t.Setenv("ASSETCTL_VERIFY_ALLOW_ANY_OS", "1")
+		if err := checkPlatform(); err != nil {
+			t.Fatalf("escape hatch must lift the guard: %v", err)
+		}
+		return
+	}
+	if err := checkPlatform(); err != nil {
+		t.Fatalf("target host must pass: %v", err)
+	}
+	t.Setenv("ASSETCTL_VERIFY_ALLOW_ANY_OS", "1")
+	if err := checkPlatform(); err != nil {
+		t.Fatalf("escape hatch must keep passing: %v", err)
 	}
 }
 

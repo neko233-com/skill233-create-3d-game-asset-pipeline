@@ -29,5 +29,8 @@ __pycache__/
 .venv/
 venv/
 
+# Release binaries (rebuilt locally, never committed)
+dist/
+
 # Agent workspace data (local memory/notes; never part of the deliverable)
 .workbuddy/

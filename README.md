@@ -101,7 +101,7 @@ go run ./cmd/assetctl run hero-knight --from topology-uv   # 断点续跑
 | `assetctl reference prepare <in> <out>` | 参考图归一化（纯 Go） |
 | `assetctl validate <build-dir>` | 交付前校验（manifest 六 ok + 契约 SHA-256 + 产物完整性） |
 | `assetctl skills list\|show\|run\|doctor` | 28 个 Blender skills：Go 编排 + bpy 执行，产出 `contracts/skill-<id>.json` |
-| `assetctl verify` | 一键生产级验证（Go 实现，12 步；`make verify` / `python scripts/verify.py` 转调） |
+| `assetctl verify` | 一键生产级验证（Go 实现，13 步；`make verify` / `python scripts/verify.py` 转调） |
 | `assetctl blender <script> [-- --args]` | 透传 Blender 5.2 |
 | `assetctl doctor` | 工具链报告（Go / Blender 5.2 / `ASSETCTL_BLENDER` / 供应商+DEFAULT / Tripo URL / axes / 脚本 / 退出码） |
 
@@ -115,8 +115,8 @@ go run ./cmd/assetctl run hero-knight --from topology-uv   # 断点续跑
 - 防静默失败：每个阶段执行后 runner 校验 `--out` 存在；每个阶段写出 `build/<id>/contracts/<stage>.json`（SHA-256 + 字节数 + FBX 七参数），`assetctl validate --expect-contracts` 重新读盘核对。
 - **Skills 子系统**（SPEC.md §8A）：28 个 `skills/<id>/SKILL.md` 照抄 [EL4CTEO/blender-skills](https://github.com/EL4CTEO/blender-skills)（MIT，附 LICENSE 副本），执行由 `internal/skills`（Go 注册表 + 契约复核）驱动单一入口 `scripts/blender/skill_run.py`；`assetctl skills doctor` 校验目录树 / manifest / catalog / dispatcher 一致，`testing/test_skills.py` 在 mock_bpy 下跑通全部 28 个。
 - `assetctl validate` 检查 `manifest.json` 六阶段全 `ok`、契约摘要、产物非零且 PNG/GLB magic 正确；`assetctl doctor` 用于生产 onboarding 自检。
-- **一键验证 `assetctl verify`**（Go 1.27 实现，12 步）：布局(11 bpy 模块) / skills 注册表 / 零第三方依赖 / gofmt / build / vet / race+coverage / **覆盖率≥70%** / py_compile / unittest / doctor / CLI 冒烟。`python scripts/verify.py` 与 `make verify` 都只是转调它。
-- `.github/workflows/ci.yml`：3-OS 矩阵（ubuntu / macos / windows）+ Go 1.27 + setup-python，上传 `coverage.out`。
+- **一键验证 `assetctl verify`**（Go 1.27 实现，13 步）：布局(11 bpy 模块) / skills 注册表 / 零第三方依赖 / gofmt / build / vet / race+coverage / **覆盖率≥70%** / py_compile / unittest / doctor / CLI 冒烟。`python scripts/verify.py` 与 `make verify` 都只是转调它。
+- **不使用任何 CI 服务（含 GitHub Actions）**：`assetctl verify` 是唯一门禁，必须在本地跑；`build-windows.bat` 出 `dist/assetctl.exe`（Windows x86_64）并自检。
 
 ## 六阶段与文档索引
 
@@ -142,12 +142,13 @@ internal/runner/                   六阶段执行 + Launcher 抽象 + manifest.
 internal/reference/                参考图归一化（纯 Go）
 internal/validate/                 交付校验（manifest 六 ok + 契约 SHA-256 + 产物完整性）
 internal/skills/                   28 个 skills 的 Go 注册表 + 执行 + 契约复核
-internal/verify/                   一键验证（Go 1.27，12 步）
+internal/verify/                   一键验证（Go 1.27，13 步）
 scripts/blender/                   Blender 5.2 内置 bpy 脚本（11 个模块，含 skill_run.py 调度器）
 scripts/verify.py                  一键验证兼容 shim（转调 assetctl verify）
 testing/                           mock_bpy.py / fake_blender.py / harness.py / 阶段级 + skills unittest
 skills/                            28 个照抄的 skills（MIT）+ ADAPTATION.md + manifest.json
-.github/workflows/ci.yml            Win/Linux/macOS 三平台 CI
+build-windows.bat                  本地发布：构建 dist/assetctl.exe（Windows x86_64）
+dist/                              本地二进制产出（gitignored）
 docs/                              分阶段文档（00/10/20…80）
 examples/                          asset.json / 提示词 / 清单示例
 assets/<id>/asset.json             每个资产的配置

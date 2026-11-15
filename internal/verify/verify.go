@@ -65,13 +65,14 @@ func Run(root string, stdout, stderr io.Writer) (*Report, error) {
 	pyFiles := pythonFiles(abs)
 
 	steps := []step{
+		{"target platform windows/amd64", func() error { return checkPlatform() }},
 		{"repo layout (11 bpy modules + harness)", func() error { return checkLayout(abs) }},
 		{"skills registry (28 docs + Go catalog + bpy)", func() error { return skills.ValidateCatalog(abs) }},
 		{"go.mod: zero third-party dependencies", func() error { return checkGoMod(abs) }},
 		{"gofmt -l (no unformatted Go files)", func() error { return checkGofmt(abs) }},
 		{"go build ./...", func() error { return command(abs, "go", "build", "./...") }},
 		{"go vet ./...", func() error { return command(abs, "go", "vet", "./...") }},
-		{"go test ./... (race + coverage on Unix)", func() error { return goTest(abs) }},
+		{"go test ./... (coverage profile)", func() error { return goTest(abs) }},
 		{"coverage >= " + minCoverageLabel() + "%", func() error { return checkCoverage(abs) }},
 		{"python py_compile (scripts/blender + testing)", func() error {
 			return pyCompile(abs, py, pyFiles)
@@ -129,6 +130,31 @@ func command(dir, exe string, args ...string) error {
 	return nil
 }
 
+// TargetOS / TargetArch are the only platforms this release is verified on
+// (user decision: Windows x86_64 first). Other platforms are not claimed to
+// work; ASSETCTL_VERIFY_ALLOW_ANY_OS=1 lifts the guard for experimentation.
+const (
+	TargetOS   = "windows"
+	TargetArch = "amd64"
+)
+
+// checkPlatform fails fast on a host the pipeline is not declared for, so a
+// "green" verify can never be produced on an untested platform.
+func checkPlatform() error {
+	if os.Getenv("ASSETCTL_VERIFY_ALLOW_ANY_OS") != "" {
+		return nil
+	}
+	if runtime.GOOS != TargetOS || runtime.GOARCH != TargetArch {
+		return fmt.Errorf("unsupported host %s/%s: this release targets %s/%s only "+
+			"(set ASSETCTL_VERIFY_ALLOW_ANY_OS=1 to verify anyway)",
+			runtime.GOOS, runtime.GOARCH, TargetOS, TargetArch)
+	}
+	return nil
+}
+
+// goTest runs the Go suite with a coverage profile. -race is only attempted on
+// Unix (Windows has no cgo here, so -race is unavailable); the branch is kept
+// because it is a GOOS decision, not dead code.
 func goTest(dir string) error {
 	args := []string{"test", "./...", "-count=1", "-coverprofile=coverage.out"}
 	if runtime.GOOS != "windows" && os.Getenv("ASSETCTL_VERIFY_NO_RACE") != "1" {

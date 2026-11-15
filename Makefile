@@ -4,7 +4,20 @@
 
 GO ?= go
 
-.PHONY: all build vet test race coverage e2e verify doctor skills skills-doctor clean
+# Release target: Windows x86_64 only (user decision). No CI service is used —
+# `make release` is the single, local publishing gate.
+GOOS_TARGET   ?= windows
+GOARCH_TARGET ?= amd64
+
+.PHONY: all build vet test race coverage e2e verify doctor skills skills-doctor dist release clean
+
+dist:
+	GOOS=$(GOOS_TARGET) GOARCH=$(GOARCH_TARGET) CGO_ENABLED=0 \
+		$(GO) build -trimpath -ldflags "-s -w" -o dist/assetctl.exe ./cmd/assetctl
+	@echo "built dist/assetctl.exe ($$(wc -c < dist/assetctl.exe) bytes)"
+
+release: verify dist
+	@echo "release ready: dist/assetctl.exe (verify 13/13 green)"
 
 all: verify
 

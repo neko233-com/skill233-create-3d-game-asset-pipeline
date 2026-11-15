@@ -16,7 +16,7 @@ assetctl validate <build-dir> [--expect-humanoid] [--expect-textures]
 assetctl blender <script> [-- --args...]     # 透传 Blender 5.2
 assetctl doctor                              # 工具链报告（v2 新增）
 assetctl skills list|show|run|doctor         # 28 个 Blender skills（v2.2 新增，详见 docs/90-skills.md）
-assetctl verify                              # 一键生产级验证（12 步，Go 1.27 实现，v2.2）
+assetctl verify                              # 一键生产级验证（13 步，Go 1.27 实现，v2.2）
 ```
 
 `assetctl run` 依次执行六阶段，写 `build/<id>/manifest.json`；任一阶段失败即停止并记录状态。`--from` / `--only` 支持断点续跑（Tripo 半自动场景必需，尤其 `--from topology-uv`）。`assetctl init` 默认 `strategy=tripo`、`handoff.mode=manual`；`--supplier` 为 `--strategy` 的别名。
@@ -225,7 +225,7 @@ assetctl doctor
 
 ### 3.10 `assetctl verify`（v2.1 新增，一键验证）
 
-Go 1.27 实现（`internal/verify/verify.go`），**逻辑不在系统 Python 中**；`python scripts/verify.py` 与 `make verify` 都只是兼容转调。12 步按序执行、任一失败即停：
+Go 1.27 实现（`internal/verify/verify.go`），**逻辑不在系统 Python 中**；`python scripts/verify.py` 与 `make verify` 都只是兼容转调。13 步按序执行、任一失败即停：
 
 1. 仓库布局（11 个 `scripts/blender/*.py` + `testing/` harness）
 2. Skills 注册表一致性（`skills.ValidateCatalog`：28 个 SKILL.md / ADAPTATION.md / manifest.json / bpy 分派器）
@@ -248,7 +248,7 @@ ASSETCTL_VERIFY_NO_RACE=1 make verify   # 跳过 race（无 gcc 的 Unix 环境�
 ASSETCTL_VERIFY_MIN_COVERAGE=0 make verify   # 临时关闭覆盖率门禁（重构期）
 ```
 
-`ASSETCTL_PYTHON` 可指定测试用解释器；`ASSETCTL_VERIFY_MIN_COVERAGE` 调整覆盖率下限（默认 70，非法值回退默认）；CI（`.github/workflows/ci.yml`）在 ubuntu / macos / windows 三平台执行同一命令并上传覆盖率。
+`ASSETCTL_PYTHON` 可指定测试用解释器；`ASSETCTL_VERIFY_MIN_COVERAGE` 调整覆盖率下限（默认 70，非法值回退默认）；`ASSETCTL_VERIFY_ALLOW_ANY_OS=1` 可绕过首步的 windows/amd64 平台守卫。**本仓库不使用任何 CI 服务**，同一命令在本地 Windows x86_64 执行即可。
 
 ### 3.11 `assetctl skills <list|show|run|doctor>`（v2.2 新增，详见 [90-skills.md](90-skills.md)）
 
@@ -321,47 +321,43 @@ build/hero-knight/
 └── manifest.json
 ```
 
-## 6. CI 集成示例
+## 6. 本地发布与自动化（不使用 CI 服务）
 
-**`go test ./...` 本身就是完整的自动化验证**：`internal/runner` 的 `Launcher` 抽象在生产用 `CommandLauncher`（真实 Blender 5.2），在 CI / 测试用 `ScriptLauncher` 运行 `testing/fake_blender.py`（纯标准库 `bpy` + `mathutils` 模拟器）。模拟器通过写入 `.blend` / `.fbx` 文件的 JSON 快照在多个阶段进程间持久化场景状态、并用标准库 `zlib` / `struct` 写出真实 PNG，因此六阶段端到端跑通，**无需安装 Blender 5.2**。`scripts/verify.py` 可一键跑 `go build` / `go vet` / `go test`（unix 上带 `-race -cover`，Windows 上普通）/ `py_compile` / `python -m unittest discover -s testing`；`Makefile` 的 `verify` target 调用它；`.github/workflows/ci.yml` 用 3-OS 矩阵（ubuntu / macos / windows）+ Go 1.27 + setup-python。
+**平台策略（v2.3）**：发布平台**仅 Windows x86_64**（`GOOS=windows GOARCH=amd64`）；本仓库**不使用任何 CI 服务，明确禁止 GitHub Actions**。门禁与发布全部在本地完成：
 
-```yaml
-# .github/workflows/ci.yml（示意，3-OS 矩阵）
-name: ci
-on: [push, pull_request]
-jobs:
-  verify:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.27'
-      - uses: actions/setup-python@v5
-      - name: Full automated verification (no Blender needed)
-        run: go test ./...
-      - name: One-shot verify
-        run: python scripts/verify.py
+```bat
+REM 发布：构建 dist\assetctl.exe 并自检（双击或 cmd 里运行）
+build-windows.bat
 ```
 
-纯命令行等价（本地 / 任意 shell，用默认供应商 + `--handoff fixture` 无人值守）：
+```bash
+# 等价的手动步骤（Git Bash 可直接用；原生终端见 .bat）
+go run ./cmd/assetctl verify                                  # 13 步全绿（第 1 步即校验 windows/amd64）
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+  go build -trimpath -ldflags "-s -w" -o dist/assetctl.exe ./cmd/assetctl
+./dist/assetctl.exe version
+git push origin main && git push origin --tags
+```
+
+`make release`（`Makefile`）等价于 `verify` + `dist`，仅在本机装了 make 时可用（Windows 默认没有，用 `.bat`）。
+
+**`go test ./...` 本身就是完整的自动化验证**：`internal/runner` 的 `Launcher` 抽象在生产用 `CommandLauncher`（真实 Blender 5.2），在测试中用 `ScriptLauncher` 运行 `testing/fake_blender.py`（纯标准库 `bpy` + `mathutils` 模拟器）。模拟器通过写入 `.blend` / `.fbx` 文件的 JSON 快照在多个阶段进程间持久化场景状态、并用标准库 `zlib` / `struct` 写出真实 PNG，因此六阶段端到端跑通，**无需安装 Blender 5.2**。
+
+纯命令行等价（默认供应商 + `--handoff fixture` 无人值守）：
 
 ```bash
 go test ./...                                                   # 完整自动化验证，无需 Blender
-go build -o assetctl ./cmd/assetctl
-./assetctl version
-./assetctl doctor
-./assetctl strategies
-./assetctl init hero-knight --handoff fixture --kind character --humanoid   # 默认 strategy=tripo + fixture 无人值守
-./assetctl run hero-knight
-./assetctl validate build/hero-knight --expect-humanoid --expect-textures || exit 1
+go build -o assetctl.exe ./cmd/assetctl
+./assetctl.exe version
+./assetctl.exe doctor
+./assetctl.exe strategies
+./assetctl.exe init hero-knight --handoff fixture --kind character --humanoid   # 默认 strategy=tripo + fixture 无人值守
+./assetctl.exe run hero-knight
+./assetctl.exe validate build/hero-knight --expect-humanoid --expect-textures || exit 1
 ```
 
 要点：
-- **CI 用 `--handoff fixture`（或 `ASSETCTL_TRIPO_HANDOFF=fixture`）才能无人值守**——默认供应商 `tripo`（半自动）在 `manual` 模式下会缺 GLB 而 exit `3`；`fixture` 生成确定性最小合法 GLB，使默认供应商在 CI 中全自动。
+- **无人值守必须用 `--handoff fixture`（或 `ASSETCTL_TRIPO_HANDOFF=fixture`）**——默认供应商 `tripo`（半自动）在 `manual` 模式下会缺 GLB 而 exit `3`；`fixture` 生成确定性最小合法 GLB，使默认供应商全自动。
 - `validate` 放在最后一步，非 0 直接让 job 失败；它额外检查 `manifest.json` 六阶段全 `ok`（DoD 门禁）。
 - 版本/URL/坐标基线由 `assetctl version` / `assetctl doctor` 与 `config.Validate()` 双重保证（[61](61-language-split.md)）。
 

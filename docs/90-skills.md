@@ -128,7 +128,7 @@ Go 侧读完契约后**必须**复核：`schema==1`、`stage == "skill-"+id`、`
 | Go 注册表 | `internal/skills/skills_test.go` | catalog 与 `skills/manifest.json` 一一对应、operation 唯一、未知 skill / 非法 asset id、dry-run argv 排序、契约串号与缺失 |
 | Go 校验器 | `assetctl skills doctor`（`skills.ValidateCatalog`） | 28 个 `SKILL.md` 与 `ADAPTATION.md` 存在且非空、`manifest.json` 字段完整、`skill_run.py` 存在 |
 | bpy 全量 | `testing/test_skills.py` | 在 `mock_bpy` 下跑通**全部 28 个** skill：退出码 0、契约 schema/身份/operation 正确、`result.ok`、`outputs` 非空且摘要可重算 |
-| 一键 | `assetctl verify` 第 2 步 | 注册表一致性随 CI 三平台自动跑 |
+| 一键 | `assetctl verify` 第 2 步 | 注册表一致性随本地 `verify` 自动跑（无 CI 服务） |
 
 ## 8. 新增 skill 的步骤
 

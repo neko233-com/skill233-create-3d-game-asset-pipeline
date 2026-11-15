@@ -1,9 +1,11 @@
-# SPEC.md — 流水线规范（唯一契约 · v2.2 / production-grade）
+# SPEC.md — 流水线规范（唯一契约 · v2.3 / production-grade）
 
 本文件是本仓库的**规范性契约**。所有文档、Go 编排器、Blender 脚本必须与之一致；冲突时以本文件为准。
 版本 / URL 的硬性约束另见 [AGENTS.md](AGENTS.md)。
 
-> **v2.2 changelog（相对 v2.1）**：新增 **Skills 子系统**（§8A）——照抄 EL4CTEO/blender-skills（MIT）的 28 个 Agent Skill 文档，实现为 Go 1.27 注册表（`internal/skills`）+ 单个 bpy 调度器（`scripts/blender/skill_run.py`），每个 skill 产出 `build/<id>/contracts/skill-<id>.json` 契约并经 `assetctl skills doctor` 校验；`assetctl verify` 扩为 12 步（新增 skills 注册表、gofmt 与覆盖率门禁）。**版本收敛为 Blender 5.2 单一目标**：不再探测/兼容 5.1 / 4.x 安装，`doctor` 与 `FindBlender` 只接受 5.2 系列。
+> **v2.3 changelog（相对 v2.2）**：发布平台收敛为 **Windows x86_64 单一目标**（`GOOS=windows GOARCH=amd64`；`assetctl verify` 第 1 步强制校验宿主平台，非目标平台直接失败）；**移除 GitHub Actions 与一切 CI 服务配置**，`assetctl verify`（13 步）+ `build-windows.bat` / `make release` 成为唯一门禁与发布路径；新增本地发布产物 `dist/assetctl.exe`（gitignored，不入库）。
+
+> **v2.2 changelog（相对 v2.1）**：新增 **Skills 子系统**（§8A）——照抄 EL4CTEO/blender-skills（MIT）的 28 个 Agent Skill 文档，实现为 Go 1.27 注册表（`internal/skills`）+ 单个 bpy 调度器（`scripts/blender/skill_run.py`），每个 skill 产出 `build/<id>/contracts/skill-<id>.json` 契约并经 `assetctl skills doctor` 校验；`assetctl verify` 扩为 13 步（新增 skills 注册表、gofmt 与覆盖率门禁）。**版本收敛为 Blender 5.2 单一目标**：不再探测/兼容 5.1 / 4.x 安装，`doctor` 与 `FindBlender` 只接受 5.2 系列。
 >
 > **v2.1 changelog（相对 v2）**：新增 §5A 阶段文件契约（10 个 bpy 模块各产出 `contracts/<stage>.json`，含 SHA-256 / 字节数 / FBX 七参数，`assetctl validate` 默认重算校验）；`assetctl verify`（Go 实现，9 步）与 3-OS CI；非 dry-run 六阶段 E2E 集成测试；阶段级 Python 测试（10 模块 + mock_bpy）；fixture GLB 改为含真实三角形；修复 resume manifest 降级、输出流数据竞争、env handoff 校验、Blender 5.x EEVEE API 与跨平台 Blender 发现。语言边界：系统 Python 仅测试 harness，交付逻辑全 Go + bpy。
 >
@@ -18,6 +20,7 @@
 - **我们自己写的代码 = Go 1.27**：CLI、编排器、策略注册表、配置、校验、参考图处理，全部 Go 1.27，且**零第三方依赖**（仅标准库）。
 - **Blender 内部代码 = Blender 5.2 内置 Python（`bpy`）**：通过 `blender --background --factory-startup --python <script> -- ...` 运行。Blender 原生自带什么 Python 就用什么，不假设系统 Python，也不在 Blender 里 `pip install`。（用户原话：「他原生代码用什么就用什么」）
 - **Blender 版本 = 5.2，且只有 5.2**（单一目标版本）：`asset.json.blenderVersion` 必须为 `"5.2"`，`FindBlender` 只探测 5.2 安装路径/`PATH`，`CheckBlenderVersion` 要求 `blender --version` 报告 5.2 系列；不为 5.1 / 4.x 提供兼容分支（旧版本 API 差异只在文档中作为迁移提示）。**Tripo 入口 = https://studio.tripo3d.com/**。
+- **宿主平台 = Windows x86_64，且只有它**（v2.3）：发布二进制目标 `GOOS=windows GOARCH=amd64`；`assetctl verify` 首步校验宿主平台，非目标平台直接失败（`ASSETCTL_VERIFY_ALLOW_ANY_OS=1` 仅供试验）。**禁止使用 GitHub Actions / 任何 CI 服务**：门禁必须在本机跑。
 - **参考插件 ACT**：https://github.com/mrven/Blender-Asset-Creation-Toolset （GPL-3.0，默认分支 `master`，release 2025.2）。只对齐其行为与参数，**不复制 / 不 vendoring 其源码**，避免 GPL 污染本仓库 MIT 许可。
 - 系统 Python 3.14 只用于开发机上的辅助检查（`py_compile` / 测试），不进入交付流水线。
 
@@ -89,7 +92,9 @@ type Strategy interface {
 - `assetctl validate` 除既有检查外，额外校验 `build/<id>/manifest.json`：**六阶段必须全部为 `ok`**（DoD 门禁）。
 - 新增 `assetctl doctor`：打印工具链报告——Go 版本、Blender 5.2 是否存在 / `ASSETCTL_BLENDER`、已注册供应商 + DEFAULT、Tripo URL、坐标轴契约、`scripts/blender` 阶段脚本是否齐全、退出码。用于生产环境 onboarding 自检。
 
-**一键验证 = `assetctl verify`（Go 1.27 实现，`internal/verify/verify.go`）**，共 12 步：仓库布局（11 个 bpy 脚本 + harness）、skills 注册表一致性、`go.mod` 零第三方依赖校验、`gofmt -l` 格式门禁、`go build ./...`、`go vet ./...`、`go test ./... -count=1 -coverprofile=coverage.out`（Unix 额外 `-race`，Windows 因 cgo 限制不启用 race）、**覆盖率门禁（纯 Go 解析 `coverage.out`，默认 ≥70%，`ASSETCTL_VERIFY_MIN_COVERAGE` 可覆盖）**、`py_compile` 所有 bpy/测试脚本、`python -m unittest discover -s testing`、`assetctl doctor`、CLI 冒烟。`scripts/verify.py` 只是调用它的兼容 shim（**验证逻辑不在系统 Python 中**），`make verify` 同样转调 Go 命令；`.github/workflows/ci.yml` 为 3-OS 矩阵（ubuntu / macos / windows）+ Go 1.27 + setup-python，并上传 `coverage.out`。
+**一键验证 = `assetctl verify`（Go 1.27 实现，`internal/verify/verify.go`）**，共 13 步：仓库布局（11 个 bpy 脚本 + harness）、skills 注册表一致性、`go.mod` 零第三方依赖校验、`gofmt -l` 格式门禁、`go build ./...`、`go vet ./...`、`go test ./... -count=1 -coverprofile=coverage.out`（Unix 额外 `-race`，Windows 因 cgo 限制不启用 race）、**覆盖率门禁（纯 Go 解析 `coverage.out`，默认 ≥70%，`ASSETCTL_VERIFY_MIN_COVERAGE` 可覆盖）**、`py_compile` 所有 bpy/测试脚本、`python -m unittest discover -s testing`、`assetctl doctor`、CLI 冒烟。`scripts/verify.py` 只是调用它的兼容 shim（**验证逻辑不在系统 Python 中**），`make verify` 同样转调 Go 命令。
+
+**平台与 CI 策略（v2.3）**：本仓库**不使用任何 CI 服务，明确禁止 GitHub Actions**；发布平台**仅 Windows x86_64**（`GOOS=windows GOARCH=amd64`）。`assetctl verify` 第 1 步校验宿主平台，非目标平台即失败（`ASSETCTL_VERIFY_ALLOW_ANY_OS=1` 仅供临时试验）。发布 = 本地 `build-windows.bat`（或 `make release`）产出 `dist/assetctl.exe` + `assetctl verify` 全绿 + `git push`。
 
 `go test ./...` 本身即完整自动化验证：包含 **非 dry-run 六阶段 E2E**（`ScriptLauncher` 驱动真实 bpy 脚本）、Go 全量单测与 CLI 测试；`python -m unittest discover -s testing` 覆盖 11 个 bpy 模块、28 个 skills、契约与 mock_bpy 自身。**全程不需要安装 Blender 5.2。**
 

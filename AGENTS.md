@@ -24,6 +24,8 @@
   - 只对齐其行为与参数，**不复制 / 不 vendoring 其源码**，避免 GPL 污染本仓库 MIT 许可。
   - 采用其 `"Unity"` 导出档（支持动画）；不采用 `"Unity (Pre-Rotated)"`（不支持动画）。Unity 导入需勾 **Bake Axis Conversion**。
 - **系统 Python** 仅用于开发机 / CI 的**测试 harness 与辅助检查**（`testing/mock_bpy.py` / `fake_blender.py` / 阶段级 unittest / `py_compile`），**不进入交付流水线**；`scripts/verify.py` 只是转调 Go `assetctl verify` 的兼容 shim，不含验证逻辑。交付物 = Go CLI/编排 + Blender 5.2 内置 bpy 脚本。
+- **发布平台：仅 Windows x86_64（`GOOS=windows GOARCH=amd64`）**。`assetctl verify` 首步即校验宿主平台，非目标平台直接失败（`ASSETCTL_VERIFY_ALLOW_ANY_OS=1` 仅供试验）。
+- **禁止使用 GitHub Actions**（用户决定）：仓库没有任何 CI 服务配置，`assetctl verify` 与 `build-windows.bat` 是唯一的自动化门禁与发布路径，必须在本地跑。
 - **目标引擎**：Unity（URP 优先），资产以 FBX + PBR 贴图交付。
 
 ## 语言分工（硬性）
@@ -55,10 +57,11 @@
 | `cmd/assetctl/` | Go 1.27 CLI 入口（`assetctl`） |
 | `internal/{config,strategy,runner,reference,validate,skills,verify}/` | Go 编排器：配置、策略注册、六阶段执行、参考图、校验、skills 注册表、一键验证 |
 | `scripts/blender/` | Blender 5.2 内运行的 `bpy` 脚本（11 个：六阶段 + rig_check + humanoid_rig + tripo_to_unity + common + skill_run） |
-| `internal/verify/` + `scripts/verify.py` | Go 实现的一键验证（12 步）+ 兼容 shim；验证逻辑不在系统 Python 中 |
+| `internal/verify/` + `scripts/verify.py` | Go 实现的一键验证（13 步）+ 兼容 shim；验证逻辑不在系统 Python 中 |
 | `testing/` | `mock_bpy.py` / `fake_blender.py` / `harness.py` / 阶段级 + skills unittest（仅测试，不进交付） |
 | `skills/` | 照抄 EL4CTEO/blender-skills（MIT）的 28 个 SKILL.md + ADAPTATION.md + `manifest.json`（Go 侧据此校验，见 SPEC.md §8A） |
-| `.github/workflows/ci.yml` | 3-OS 矩阵（Win/Linux/macOS）一键验证 |
+| `build-windows.bat` | 本地发布：`go build` 出 `dist/assetctl.exe` 并自检（无 CI 服务） |
+| `dist/` | 本地产出（gitignored），不入库 |
 | `docs/` | 分阶段流水线文档（00/10/20…80 编号） |
 | `examples/` | `asset.json`、参考图、Tripo 提示词示例 |
 | `assets/<id>/asset.json` | 每个资产的配置 |
@@ -75,7 +78,7 @@ Unity 导入后贴图/骨骼/动画均可用（无粉材质、无 T-pose、Avata
 go build ./... && go vet ./... && go test ./...        # go test ./... 即完整自动化验证，无需装 Blender
 go run ./cmd/assetctl doctor                            # 工具链报告（v2 新增）
 go run ./cmd/assetctl skills doctor                     # 28 skills 注册表一致性（v2.2 新增）
-go run ./cmd/assetctl verify                           # 一键生产级验证（12 步，Go 实现，v2.2）
+go run ./cmd/assetctl verify                           # 一键生产级验证（13 步，Go 实现，v2.2）
 go run ./cmd/assetctl skills list                       # 列出 28 个 Blender skills
 go run ./cmd/assetctl skills run blender-core --asset hero-knight   # 单跑一个 skill（需 Blender 5.2）
 go run ./cmd/assetctl strategies                       # 列出供应商，tripo 标注 DEFAULT

@@ -77,7 +77,7 @@ v2 为「无需安装 Blender 5.2 也能端到端验证六阶段」引入两处*
 | 文件 | 角色 | 边界 |
 |------|------|------|
 | `testing/fake_blender.py` | 纯标准库（`zlib` / `struct`）的 `bpy` + `mathutils` 模拟器：通过写入 `.blend` / `.fbx` 的 JSON 快照在多个阶段进程间持久化场景状态、写出真实 PNG | 仅在 `go test ./...` / CI 中由 `ScriptLauncher` 拉起；**不产出交付物**，生产用 `CommandLauncher` 调真实 Blender 5.2 |
-| `scripts/verify.py` | 一键验证脚本：`go build` / `go vet` / `go test`（unix 带 `-race -cover`，Windows 普通）/ `py_compile` 所有 `scripts/blender/*.py` / `python -m unittest discover -s testing` | 由 `Makefile` 的 `verify` target 与 `.github/workflows/ci.yml` 调用；纯开发自测工具，六阶段交付不依赖它 |
+| `scripts/verify.py` | 一键验证脚本：`go build` / `go vet` / `go test`（unix 带 `-race -cover`，Windows 普通）/ `py_compile` 所有 `scripts/blender/*.py` / `python -m unittest discover -s testing` | 由 `Makefile` 的 `verify` target 调用（本仓库不使用 CI 服务）；纯开发自测工具，六阶段交付不依赖它 |
 
 > `internal/runner` 的 `Launcher` 抽象把两者隔开：生产 = `CommandLauncher`（真实 Blender 5.2），CI / 测试 = `ScriptLauncher`（`fake_blender.py`）。因此 **`go test ./...` 本身就是完整的自动化验证**，不需要安装 Blender 5.2；系统 Python 在这里依旧只是「测试辅助」，不是交付运行时。
 
