@@ -1,16 +1,28 @@
-"""Blender 5.2 · Humanoid rig validator.
+"""rig_check.py — Unity-Humanoid rig validator (SPEC.md §5 gate, docs/50).
 
-Usage:
-    blender --background --python scripts/blender/rig_check.py -- --input build/hero/hero.fbx
+Called by `assetctl run` after stage 5 for `humanoid: true` assets:
 
-Checks for a Humanoid-compatible skeleton: required bones, hierarchy, duplicates.
+    blender --background --factory-startup --python scripts/blender/rig_check.py \
+        -- --input build/<id>/<id>.fbx
+
+Also accepts the stage-style form (docs/50 example):
+
+    ... -- --asset <id> --config <asset.json> --in build/<id>/<id>.fbx
+
+So `--input` and `--in` are aliases; `--asset`/`--config` are optional.
+Exits 0 on pass, non-zero on any failure (Go runner treats non-zero as gate fail).
+
+Runs inside Blender 5.2 native Python (bpy + stdlib only).
 """
 
-import argparse
 import os
 import sys
 
-import bpy
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import bpy  # noqa: E402
+
+from common import log, parse_args, open_input, first_armature  # noqa: E402
 
 REQUIRED = [
     "Hips", "Spine", "Chest", "Neck", "Head",
@@ -21,56 +33,60 @@ REQUIRED = [
 ]
 
 
-def parse_args():
-    argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
-    p = argparse.ArgumentParser()
-    p.add_argument("--input", required=True)
-    return p.parse_args(argv)
-
-
 def norm(name):
     return name.strip().lower().replace(" ", "").replace("_", "")
 
 
+def fail(msg):
+    print("[rig_check] FAIL: %s" % msg)
+    sys.stdout.flush()
+    sys.exit(1)
+
+
 def main():
-    args = parse_args()
-    path = os.path.abspath(args.input)
-    bpy.ops.object.select_all(action="SELECT")
-    bpy.ops.object.delete(use_global=False)
+    a = parse_args()
+    inp = a.inp
+    if not inp:
+        # Last-resort: derive from --asset if only stage-style args were given.
+        if a.asset:
+            inp = os.path.join("build", a.asset, a.asset + ".fbx")
+    if not inp:
+        fail("no input FBX (pass --input / --in, or --asset)")
+
+    path = os.path.abspath(inp)
+    if not os.path.isfile(path):
+        fail("input not found: %s" % path)
     ext = os.path.splitext(path)[1].lower()
-    if ext == ".fbx":
-        bpy.ops.import_scene.fbx(filepath=path)
-    elif ext in {".glb", ".gltf"}:
-        bpy.ops.import_scene.gltf(filepath=path)
-    else:
-        print(f"[rig_check] unsupported format {ext}")
-        sys.exit(2)
+    if ext not in (".fbx", ".glb", ".gltf", ".blend"):
+        fail("unsupported format %s" % ext)
 
-    armatures = [o for o in bpy.data.objects if o.type == "ARMATURE"]
-    if not armatures:
-        print("[rig_check] FAIL: no armature found")
-        sys.exit(1)
+    open_input(path)  # clear + import (FBX/GLB) or open .blend
 
-    arm = armatures[0]
+    arm = first_armature()
+    if arm is None:
+        fail("no armature found in %s" % inp)
+
     bones = {norm(b.name): b for b in arm.data.bones}
-    print(f"[rig_check] armature={arm.name} bones={len(bones)}")
+    log("armature=%s bones=%d" % (arm.name, len(bones)))
 
     missing = [b for b in REQUIRED if norm(b) not in bones]
     if missing:
         print("[rig_check] FAIL: missing required bones:")
         for m in missing:
-            print(f"  - {m}")
+            print("  - %s" % m)
+        sys.stdout.flush()
         sys.exit(1)
 
     names = [b.name for b in arm.data.bones]
     if len(names) != len(set(names)):
-        print("[rig_check] FAIL: duplicate bone names")
-        sys.exit(1)
+        fail("duplicate bone names")
 
     print("[rig_check] OK: all required Humanoid bones present")
-    for key in ("hips", "spine", "head", "leftupperarm", "rightupperarm", "leftupperleg", "rightupperleg"):
+    for key in ("hips", "spine", "head", "leftupperarm", "rightupperarm",
+                "leftupperleg", "rightupperleg"):
         b = bones[key]
-        print(f"  {b.name}: head={tuple(round(v, 3) for v in b.head_local)}")
+        print("  %s: head=%s" % (b.name, tuple(round(v, 3) for v in b.head_local)))
+    sys.stdout.flush()
 
 
 if __name__ == "__main__":

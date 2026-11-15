@@ -1,16 +1,30 @@
+# Go (assetctl 1.27)
+/bin/
+/assetctl
+/assetctl.exe
+*.exe
+*.test
+*.out
+coverage.out
+
 # Blender
 *.blend1
 *.blend2
+
+# Generated pipeline artifacts (config in assets/ IS tracked)
+/raw/*
+/work/*
+/build/*
+!/raw/.gitkeep
+!/work/.gitkeep
+!/build/.gitkeep
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Python
+# Python (dev-machine auxiliary checks only; not part of the pipeline)
 __pycache__/
 *.pyc
 .venv/
 venv/
-
-# Raw large assets (tracked via Git LFS if needed)
-# raw/

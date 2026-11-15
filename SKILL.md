@@ -1,51 +1,86 @@
 ---
 name: create-3d-game-asset-pipeline
-description: 用浏览器 Tripo(https://studio.tripo3d.com/) 图生3D、本机 Blender 5.2 与 Python 清洗/绑定，产出可直接导入 Unity 的人形角色与道具游戏资产（含动画）。当用户要把图片/概念图变成 Unity 3D 资产、做图生3D、Blender 批处理、Unity 人形骨骼与动画重定向时使用。
+description: 游戏美术管线向的 3D 游戏资产生产流水线：Go 1.27 编排器(assetctl) + 多策略建模(默认 Blender 5.2 参数化，Tripo 图生 3D 为可选策略) → 六阶段(建模→拓扑/UV→烘焙→PBR 材质→Unity 导出/同步→渲染合成) → FBX+PBR 贴图+人形动画交付 Unity URP。当用户要做图生 3D、Blender 批处理、Unity 人形骨骼与动画、游戏美术管线、TA 管线、ACT 工具对齐时使用。
 ---
 
 # Create 3D Game Asset Pipeline
 
-把一张参考图变成 Unity 里可用的 3D 游戏资产的端到端流水线。
+把参考图 / 参数变成 Unity（URP）里可用的 3D 游戏资产的端到端、**多策略、六阶段**流水线。
+
+> 📐 规范性契约：[SPEC.md](SPEC.md)。硬性版本 / 语言分工：[AGENTS.md](AGENTS.md)。
 
 ## 何时使用
 
-- 用 Tripo 做图生 3D / 文生 3D，导出 GLB/OBJ/FBX。
-- 用本机 Blender 5.2 做减面、清理、UV/贴图整理、骨骼校验、导出 Unity FBX。
-- 纯 Python 做参考图预处理与交付前校验。
-- 人形角色自动绑定与动画重定向到 Unity Humanoid。
+- 做游戏美术管线向资产：建模 → 拓扑/UV → 烘焙 → PBR 材质 → Unity 导出/同步 → 渲染合成。
+- 用**默认策略 `blender`**（Blender 5.2 `bpy` 参数化建模）全自动出资产，或切换到 `tripo`（浏览器图生 3D）/ `import`（导入已有模型）。
+- 需要 Unity Humanoid 绑定、动画 clip、rig 校验门禁。
+- 想对齐参考插件 [ACT](https://github.com/mrven/Blender-Asset-Creation-Toolset) 的导出轴/UV/材质/命名行为。
 
 ## 工具链（硬性）
 
-- Blender **5.2**（本机），无头脚本用 `blender --background --python ... -- --args`。
-- Tripo **https://studio.tripo3d.com/**（浏览器端）。
-- Python **3.14.3**（工具脚本），Unity 目标为 URP。
+| 运行位置 | 语言 / 版本 |
+|----------|-------------|
+| CLI、编排器、策略、配置、校验、参考图 | **Go 1.27**（仅标准库） |
+| Blender 内部六阶段脚本 | **Blender 5.2 原生内置 `bpy`** |
+| 系统 Python 3.14.3 | 仅开发辅助（`py_compile`），不进交付流水线 |
+| Tripo | **https://studio.tripo3d.com/** （策略之一，非默认） |
+| 目标引擎 | Unity（URP） |
+
+## 多策略（SPEC.md §3）
+
+| id | 名称 | 自动化 | 说明 |
+|----|------|--------|------|
+| `blender` | **默认** | 全自动 | Blender 5.2 `bpy` 参数化建模，无外部服务 |
+| `tripo` | 浏览器图生 3D | 半自动 | 人工在 https://studio.tripo3d.com/ 上传 → 下载 GLB 到 `raw/<id>.glb`，Go 检测 + 断点续跑 |
+| `import` | 导入已有模型 | 全自动 | 复制 `config.source` 到 `raw/` |
+
+扩展：实现 `internal/strategy/strategy.go` 的 `Strategy` 接口并 `Register()`。
+
+## 六阶段（顺序固定，SPEC.md §4）
+
+```
+1 modeling       ← 所选 Strategy 提供（或生成）
+2 topology-uv    ← scripts/blender/stage_02_topology_uv.py
+3 bake           ← scripts/blender/stage_03_bake.py
+4 pbr            ← scripts/blender/stage_04_pbr.py
+5 unity-export   ← scripts/blender/stage_05_unity_export.py  (+ humanoid: rig_check.py 门禁)
+6 render         ← scripts/blender/stage_06_render.py
+```
 
 ## 工作流（顺序执行）
 
-1. **准备参考图** — 主体单一、正面、干净背景、正方形。用 `scripts/python/prepare_reference.py` 归一化。
-2. **Tripo 生成** — 打开 https://studio.tripo3d.com/ ，选 Image-to-3D，上传参考图，生成后下载 GLB。详见 `docs/01-tripo-image-to-3d.md`。
-3. **Blender 清洗** — 用 `scripts/blender/tripo_to_unity.py` 无头导入 GLB、清理、按 Unity 坐标系导出 FBX + 贴图。详见 `docs/02-blender-cleanup.md`。
-4. **人形动画** — 需要角色动画时，先跑 `scripts/blender/rig_check.py` 校验骨骼，再按 `docs/04-humanoid-animation.md` 重定向，Tripo 的自动绑定/动画能力也在 https://studio.tripo3d.com/ 完成。
-5. **校验交付** — `scripts/python/validate_assets.py` 检查命名、贴图、骨骼，按 `docs/05-unity-import.md` 导入 Unity。
+1. **初始化配置** — `assetctl init <id> --humanoid` 生成 `assets/<id>/asset.json`（默认 `strategy=blender`）。
+2. **（可选）准备参考图** — `assetctl reference prepare in.png raw/ --size 1024`（纯 Go 归一化：正方形、中性背景）。
+3. **（tripo 策略时）人工生成** — 打开 https://studio.tripo3d.com/ ，Image-to-3D 上传参考图，下载 GLB 到 `raw/<id>.glb`；随后 `assetctl run <id> --from modeling` 续跑。
+4. **跑流水线** — `assetctl run <id>`；Go 依次拉起 Blender 5.2 六阶段脚本，写 `build/<id>/manifest.json`。`--dry-run` 只打印命令。
+5. **校验交付** — `assetctl validate build/<id> --expect-humanoid --expect-textures`；按 [docs/42-stage-05-unity-export.md](docs/42-stage-05-unity-export.md) 导入 Unity（勾 **Bake Axis Conversion**）。
 
-## 脚本速查
+## 命令速查（SPEC.md §8）
 
 ```bash
-# 1) 参考图归一化（正方形、中性背景）
-python scripts/python/prepare_reference.py in.png out/ --size 1024
+# 构建与自测
+go build ./... && go vet ./... && go test ./...
 
-# 2) Blender 无头：Tripo GLB -> Unity FBX
-blender --background --python scripts/blender/tripo_to_unity.py -- \
-  --input raw/hero.glb --output build/hero/hero.fbx --scale 1.0
+# 查看策略 / 六阶段
+go run ./cmd/assetctl strategies
+go run ./cmd/assetctl stages
 
-# 3) 骨骼校验
-blender --background --python scripts/blender/rig_check.py -- --input build/hero/hero.fbx
+# 初始化一个资产（humanoid 角色）
+go run ./cmd/assetctl init hero-knight --humanoid --kind character
 
-# 4) 交付校验
-python scripts/python/validate_assets.py build/hero --expect-humanoid
+# 切到 tripo 策略并只跑某阶段 / 断点续跑
+go run ./cmd/assetctl init hero-knight --strategy tripo
+go run ./cmd/assetctl run hero-knight --from topology-uv
+go run ./cmd/assetctl run hero-knight --only pbr,unity-export
+
+# 参考图归一化 / 交付校验
+go run ./cmd/assetctl reference prepare concept.png raw/ --size 1024
+go run ./cmd/assetctl validate build/hero-knight --expect-humanoid --expect-textures
 ```
 
 ## 约定
 
-- 资产 ID 小写连字符；坐标系 `-Z forward / Y up`；FBX + PBR 贴图交付。
-- 任何版本/URL 变更先改 `AGENTS.md`。
+- 资产 ID 小写连字符；坐标 `-Z forward / Y up / scale 1.0`；FBX + PBR 贴图交付。
+- 导出参数对齐 ACT `"Unity"` 档（支持动画）；ACT 为 GPL-3.0，**只引用不 vendoring**，本仓库 MIT。
+- 任何版本 / URL 变更先改 `AGENTS.md`；架构变更先改 `SPEC.md`。
+- 文档索引见 [docs/00-overview.md](docs/00-overview.md)。

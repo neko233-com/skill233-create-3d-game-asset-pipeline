@@ -1,6 +1,10 @@
 # Tripo 提示词模板
 
-用于 https://studio.tripo3d.com/ 的 Text-to-3D，或作为图生3D的补充描述。
+> 仅当建模策略选 `tripo` 时使用（默认策略是 `blender`）。Tripo 入口：https://studio.tripo3d.com/ 。
+> 切换：`assetctl init <id> --strategy tripo`，产物下载到 `raw/<id>.glb` 后 `assetctl run <id> --from modeling`。
+> 见 [docs/10-strategies.md](../docs/10-strategies.md) 与 [docs/20-stage-01-modeling.md](../docs/20-stage-01-modeling.md)。
+
+用于 https://studio.tripo3d.com/ 的 Text-to-3D，或作为图生 3D 的补充描述。
 
 ## 人形角色
 

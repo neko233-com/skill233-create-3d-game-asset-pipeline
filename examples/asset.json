@@ -1,0 +1,35 @@
+{
+  "id": "hero-knight",
+  "strategy": "blender",
+  "kind": "character",
+  "humanoid": true,
+  "referenceImage": "raw/hero-knight.png",
+  "source": "",
+  "tripoUrl": "https://studio.tripo3d.com/",
+  "blenderVersion": "5.2",
+  "targetEngine": "unity-urp",
+  "axes": {
+    "forward": "-Z",
+    "up": "Y",
+    "scale": 1.0
+  },
+  "budget": {
+    "maxTriangles": 30000,
+    "maxTextureSize": 2048
+  },
+  "textures": ["basecolor", "normal", "roughness", "metallic"],
+  "animations": ["idle", "walk", "attack"],
+  "modeling": {
+    "primitive": "cube",
+    "size": 1.0,
+    "subdivisions": 2
+  },
+  "stages": [
+    "modeling",
+    "topology-uv",
+    "bake",
+    "pbr",
+    "unity-export",
+    "render"
+  ]
+}
