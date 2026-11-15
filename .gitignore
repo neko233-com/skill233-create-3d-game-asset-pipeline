@@ -28,3 +28,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Agent workspace data (local memory/notes; never part of the deliverable)
+.workbuddy/
