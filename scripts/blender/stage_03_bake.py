@@ -74,7 +74,7 @@ def main():
     log("texture outputs %s" % ("Cycles bake" if baked else "placeholders"))
 
     cleanup_scene(cfg)
-    save_blend(a)
+    save_blend(a, "bake")
     log("done -> %s" % a.out)
 
 

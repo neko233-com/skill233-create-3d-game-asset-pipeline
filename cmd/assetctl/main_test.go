@@ -2,7 +2,9 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -154,19 +156,51 @@ func TestCmdRunRejectsBadFlags(t *testing.T) {
 	}
 }
 
+func writeStageContracts(t *testing.T, dir, id string, fbx []byte) {
+	t.Helper()
+	cd := filepath.Join(dir, "contracts")
+	if err := os.MkdirAll(cd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sum := fmt.Sprintf("%x", sha256.Sum256(fbx))
+	doc := map[string]interface{}{
+		"fbxExport": map[string]interface{}{
+			"axis_forward": "-Z", "axis_up": "Y", "global_scale": 1.0,
+			"apply_unit_scale": true, "add_leaf_bones": false, "path_mode": "COPY",
+		},
+		"outputs": []map[string]interface{}{{
+			"path": "build/" + id + "/" + id + ".fbx",
+			"bytes": len(fbx), "sha256": sum,
+		}},
+	}
+	for _, s := range config.Stages {
+		doc["schema"] = 1
+		doc["asset"] = id
+		doc["stage"] = s
+		data, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(cd, s+".json"), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestCmdValidateDoDGate(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "hero-knight")
+	dir := filepath.Join(t.TempDir(), "build", "hero-knight")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	png := append([]byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, []byte("body")...)
-	_ = os.WriteFile(filepath.Join(dir, "hero-knight.fbx"), []byte("FBX"), 0o644)
+	fbx := []byte("FBX")
+	_ = os.WriteFile(filepath.Join(dir, "hero-knight.fbx"), fbx, 0o644)
 	_ = os.WriteFile(filepath.Join(dir, "hero-knight_basecolor.png"), png, 0o644)
-	if err := dispatch([]string{"validate", dir, "--expect-manifest=false"}); err != nil {
+	if err := dispatch([]string{"validate", dir, "--expect-manifest=false", "--expect-contracts=false"}); err != nil {
 		t.Fatalf("valid deliverable rejected: %v", err)
 	}
 	if err := dispatch([]string{"validate", dir}); err == nil {
-		t.Fatal("missing manifest with DoD gate must fail")
+		t.Fatal("missing manifest/contracts with DoD gate must fail")
 	}
 	doc := map[string]interface{}{
 		"assetId": "hero-knight",
@@ -177,8 +211,14 @@ func TestCmdValidateDoDGate(t *testing.T) {
 	}
 	data, _ := json.Marshal(doc)
 	_ = os.WriteFile(filepath.Join(dir, "manifest.json"), data, 0o644)
+	writeStageContracts(t, dir, "hero-knight", fbx)
 	if err := dispatch([]string{"validate", dir}); err != nil {
 		t.Fatalf("DoD-complete deliverable rejected: %v", err)
+	}
+	// A tampered artifact must be caught by the SHA-256 contract check.
+	_ = os.WriteFile(filepath.Join(dir, "hero-knight.fbx"), []byte("XXXX"), 0o644)
+	if err := dispatch([]string{"validate", dir}); err == nil {
+		t.Fatal("tampered artifact must fail the contract digest gate")
 	}
 }
 

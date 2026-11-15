@@ -48,9 +48,17 @@ def _load_state(new):
     _state.update(new)
 
 
+# Real FBX files start with this 23+4 byte binary header. The mock writes it
+# before the pickle payload so Go's integrity checks see a plausible FBX,
+# while _load_snapshot can still restore the scene graph from the same file.
+FBX_HEADER = b"Kaydara FBX Binary  \x00\x1a\x00" + struct.pack("<I", 7500)
+
+
 def _load_snapshot(path):
     try:
         with open(path, "rb") as fh:
+            prefix = fh.read(len(FBX_HEADER))
+            fh.seek(len(FBX_HEADER) if prefix == FBX_HEADER else 0)
             loaded = pickle.load(fh)
         if isinstance(loaded, dict) and "objects" in loaded:
             _load_state(loaded)
@@ -60,11 +68,13 @@ def _load_snapshot(path):
     return False
 
 
-def _write_snapshot(path):
+def _write_snapshot(path, fbx=False):
     d = os.path.dirname(os.path.abspath(path))
     if d:
         os.makedirs(d, exist_ok=True)
     with open(path, "wb") as fh:
+        if fbx:
+            fh.write(FBX_HEADER)
         pickle.dump(_state, fh)
 
 
@@ -573,8 +583,14 @@ class Data(object):
 # bpy.context / bpy.ops
 # ---------------------------------------------------------------------------
 class RenderSettings(object):
+    """Blender 5.x removed BLENDER_EEVEE_NEXT. Dynamic enums raise TypeError
+    on an invalid assignment, so the mock enforces the same rule; a stage
+    script that regresses to the 4.x identifier fails its tests."""
+
+    ENGINES = ("BLENDER_EEVEE", "BLENDER_WORKBENCH", "CYCLES")
+
     def __init__(self):
-        self.engine = "BLENDER_EEVEE_NEXT"
+        self._engine = "BLENDER_EEVEE"
         self.resolution_x = 512
         self.resolution_y = 512
         self.resolution_percentage = 100
@@ -582,6 +598,18 @@ class RenderSettings(object):
         self.film_transparent = True
         self.filepath = ""
         self.bake = types.SimpleNamespace(margin=4)
+
+    @property
+    def engine(self):
+        return self._engine
+
+    @engine.setter
+    def engine(self, value):
+        if value not in self.ENGINES:
+            raise TypeError(
+                "enum %r not found in %r (Blender 5.x removed "
+                "BLENDER_EEVEE_NEXT)" % (value, self.ENGINES))
+        self._engine = value
 
 
 class Scene(object):
@@ -702,7 +730,11 @@ class _ExportOps(object):
     def fbx(self, **kwargs):
         path = kwargs.get("filepath", "")
         if path:
-            _write_snapshot(path)
+            _write_snapshot(path, fbx=True)
+        # Record the export parameters so stage-level tests can assert the
+        # SPEC.md §9 seven-parameter Unity contract.
+        _state.setdefault("exportLog", []).append(
+            {k: repr(v) for k, v in sorted(kwargs.items())})
         return {"FINISHED"}
 
 
@@ -744,6 +776,10 @@ class Bpy(object):
         self.data = _data
         self.context = _context
         self.ops = Ops()
+        # env_report-style metadata (see skills/blender-core/SKILL.md).
+        self.app = types.SimpleNamespace(
+            version=(5, 2, 0), version_string="5.2.0",
+            background=True, binary_path="blender")
 
 
 def install():

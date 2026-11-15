@@ -15,6 +15,7 @@ assetctl reference prepare <in.png> <outdir> [--size 1024] [--bg 808080]
 assetctl validate <build-dir> [--expect-humanoid] [--expect-textures]
 assetctl blender <script> [-- --args...]     # 透传 Blender 5.2
 assetctl doctor                              # 工具链报告（v2 新增）
+assetctl verify                              # 一键生产级验证（9 步，Go 1.27 实现，v2.1）
 ```
 
 `assetctl run` 依次执行六阶段，写 `build/<id>/manifest.json`；任一阶段失败即停止并记录状态。`--from` / `--only` 支持断点续跑（Tripo 半自动场景必需，尤其 `--from topology-uv`）。`assetctl init` 默认 `strategy=tripo`、`handoff.mode=manual`；`--supplier` 为 `--strategy` 的别名。
@@ -220,6 +221,29 @@ assetctl blender scripts/blender/stage_02_topology_uv.py -- \
 ```bash
 assetctl doctor
 ```
+
+### 3.10 `assetctl verify`（v2.1 新增，一键验证）
+
+Go 1.27 实现（`internal/verify/verify.go`），**逻辑不在系统 Python 中**；`python scripts/verify.py` 与 `make verify` 都只是兼容转调。9 步按序执行、任一失败即停：
+
+1. 仓库布局（10 个 `scripts/blender/*.py` + `testing/` harness）
+2. `go.mod` 零第三方依赖 + `go 1.27` 校验
+3. `go build ./...`
+4. `go vet ./...`
+5. `go test ./... -count=1 -coverprofile=coverage.out`（Unix 额外 `-race`；Windows 因 cgo 限制不启用 race；含非 dry-run 六阶段 E2E）
+6. `py_compile` 全部 bpy / 测试脚本
+7. `python -m unittest discover -s testing`（10 个 bpy 模块 + 契约 + mock_bpy）
+8. `assetctl doctor`
+9. CLI 冒烟（version / strategies / stages）
+
+```bash
+go run ./cmd/assetctl verify            # 推荐
+make verify                            # 等价
+python scripts/verify.py                # 兼容 shim
+ASSETCTL_VERIFY_NO_RACE=1 make verify   # 跳过 race（无 gcc 的 Unix 环境）
+```
+
+`ASSETCTL_PYTHON` 可指定测试用解释器；CI（`.github/workflows/ci.yml`）在 ubuntu / macos / windows 三平台执行同一命令并上传覆盖率。
 
 ## 4. 退出码
 

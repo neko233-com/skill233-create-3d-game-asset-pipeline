@@ -110,7 +110,7 @@ def main():
         ensure_uv(obj)
 
     cleanup_scene(cfg)
-    save_blend(a)
+    save_blend(a, "topology-uv")
     log("done -> %s" % a.out)
 
 

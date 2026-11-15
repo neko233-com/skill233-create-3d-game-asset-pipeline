@@ -31,6 +31,7 @@ import bpy  # noqa: E402
 from common import (  # noqa: E402
     log, warn, parse_args, load_config, open_input, cleanup_scene, export_fbx,
     ensure_textures, write_humanoid_marker, TRIPO_URL,
+    write_contract, derive_asset, collect_outputs,
 )
 
 
@@ -65,6 +66,11 @@ def main():
         if a.humanoid or cfg.get("humanoid"):
             write_humanoid_marker(a.asset)
     log("done -> %s (full pipeline: assetctl run <asset-id>)" % fbx)
+    asset = a.asset or derive_asset(fbx)
+    a.asset = asset
+    write_contract(asset, "tripo-to-unity", [fbx] + collect_outputs(a),
+                   inp=a.inp, out=fbx, blend_out=a.blend_out,
+                   extra={"supplier": "tripo", "role": "standalone-shim"})
 
 
 if __name__ == "__main__":

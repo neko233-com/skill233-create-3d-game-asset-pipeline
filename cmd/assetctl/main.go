@@ -17,6 +17,7 @@ import (
 	"github.com/neko233-com/skill233-create-3d-game-asset-pipeline/internal/runner"
 	"github.com/neko233-com/skill233-create-3d-game-asset-pipeline/internal/strategy"
 	"github.com/neko233-com/skill233-create-3d-game-asset-pipeline/internal/validate"
+	"github.com/neko233-com/skill233-create-3d-game-asset-pipeline/internal/verify"
 )
 
 const version = "assetctl 2.0.0 (go1.27, blender5.2, tripo=https://studio.tripo3d.com/, default-supplier=tripo)"
@@ -117,6 +118,8 @@ func dispatch(args []string) error {
 		return cmdValidate(args[1:])
 	case "doctor":
 		return cmdDoctor(args[1:])
+	case "verify":
+		return cmdVerify(args[1:])
 	case "blender":
 		return cmdBlender(args[1:])
 	default:
@@ -140,6 +143,7 @@ Commands:
   reference prepare <in> <out>  归一化参考图（纯 Go，无第三方依赖）
   validate <build-dir>          交付前校验 (DoD，含 manifest 六阶段全 ok)
   doctor                        工具链 / 供应商 / 脚本齐备性报告
+  verify                        一键验证（build/vet/race/coverage/阶段测试/doctor）
   blender <script> [-- args...] 透传 Blender 5.2
 
 Run: assetctl <command> -h  for command flags.
@@ -310,16 +314,18 @@ func cmdValidate(args []string) error {
 	humanoid := fs.Bool("expect-humanoid", false, "require humanoid rig marker")
 	textures := fs.Bool("expect-textures", false, "require PBR textures")
 	manifest := fs.Bool("expect-manifest", true, "require manifest.json with six ok stages (DoD)")
+	contracts := fs.Bool("expect-contracts", true, "require six stage contracts with matching SHA-256 digests")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return errors.New("usage: assetctl validate <build-dir> [--expect-humanoid] [--expect-textures] [--expect-manifest=true|false]")
+		return errors.New("usage: assetctl validate <build-dir> [--expect-humanoid] [--expect-textures] [--expect-manifest=true|false] [--expect-contracts=true|false]")
 	}
 	r, err := validate.Validate(fs.Arg(0), validate.Options{
-		ExpectHumanoid: *humanoid,
-		ExpectTextures: *textures,
-		ExpectManifest: *manifest,
+		ExpectHumanoid:  *humanoid,
+		ExpectTextures:  *textures,
+		ExpectManifest:  *manifest,
+		ExpectContracts: *contracts,
 	})
 	if err != nil {
 		return err
@@ -388,6 +394,19 @@ func cmdDoctor(args []string) error {
 	fmt.Printf("  Stage scripts     : OK (%d files in %s)\n", len(want), scripts)
 	fmt.Println("[doctor] OK (no fatal repo defects)")
 	return nil
+}
+
+// cmdVerify runs the one-shot production verification gate (SPEC.md §3A.3).
+// The entire implementation is Go 1.27; scripts/verify.py is a compatibility
+// shim that delegates here.
+func cmdVerify(args []string) error {
+	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
+	root := fs.String("root", ".", "repo root")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	_, err := verify.Run(*root, os.Stdout, os.Stderr)
+	return err
 }
 
 func cmdBlender(args []string) error {

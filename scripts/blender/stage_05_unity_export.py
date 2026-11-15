@@ -41,7 +41,7 @@ def main():
     if humanoid:
         write_humanoid_marker(a.asset)
 
-    save_blend(a)  # --blend-out work/<id>/05-unity-export.blend (if .blend)
+    save_blend(a, "unity-export")  # --blend-out work/<id>/05-unity-export.blend (if .blend)
     log("done -> %s" % a.out)
 
 

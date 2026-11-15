@@ -1,10 +1,15 @@
 package validate
 
 import (
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/neko233-com/skill233-create-3d-game-asset-pipeline/internal/config"
 )
 
 // write creates a structurally plausible artifact: PNG/GLB carry their magic
@@ -163,6 +168,70 @@ func baseDeliverable(t *testing.T, dir string) {
 }
 
 // TestValidateManifestGate proves the DoD gate: all six stages must be "ok".
+// TestCheckContracts verifies the SHA-256 stage-contract gate in isolation.
+func TestCheckContracts(t *testing.T) {
+	root := t.TempDir()
+	id := "hero-knight"
+	dir := filepath.Join(root, "build", id)
+	cd := filepath.Join(dir, "contracts")
+	if err := os.MkdirAll(cd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(dir, id+".fbx"))
+	fbx, _ := os.ReadFile(filepath.Join(dir, id+".fbx"))
+	digest := fmt.Sprintf("%x", sha256.Sum256(fbx))
+	fbxKeys := map[string]interface{}{
+		"axis_forward": "-Z", "axis_up": "Y", "global_scale": 1.0,
+		"apply_unit_scale": true, "add_leaf_bones": false, "path_mode": "COPY",
+	}
+	makeContract := func(stage, sha string) []byte {
+		doc := map[string]interface{}{
+			"schema": 1, "asset": id, "stage": stage,
+			"fbxExport": fbxKeys,
+			"outputs": []map[string]interface{}{{
+				"path": "build/" + id + "/" + id + ".fbx",
+				"bytes": len(fbx), "sha256": sha,
+			}},
+		}
+		data, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
+	}
+	for _, stage := range config.Stages {
+		if err := os.WriteFile(filepath.Join(cd, stage+".json"), makeContract(stage, digest), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if issues := checkContracts(dir, true); len(issues) != 0 {
+		t.Fatalf("valid contracts rejected: %v", issues)
+	}
+	// A single corrupted digest must be reported.
+	if err := os.WriteFile(filepath.Join(cd, "bake.json"), makeContract("bake", strings.Repeat("0", 64)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	issues := checkContracts(dir, true)
+	if len(issues) == 0 || !strings.Contains(strings.Join(issues, " "), "SHA-256") {
+		t.Fatalf("tampered digest not detected: %v", issues)
+	}
+	// A missing stage contract must be reported.
+	_ = os.Remove(filepath.Join(cd, "render.json"))
+	issues = checkContracts(dir, true)
+	if len(issues) == 0 || !strings.Contains(strings.Join(issues, " "), "missing stage contract") {
+		t.Fatalf("missing contract not detected: %v", issues)
+	}
+	// Without the flag, a missing contracts directory is not an error.
+	empty := filepath.Join(root, "build", "prop-sword")
+	_ = os.MkdirAll(empty, 0o755)
+	if issues := checkContracts(empty, false); len(issues) != 0 {
+		t.Fatalf("optional contracts should not fail: %v", issues)
+	}
+	if issues := checkContracts(empty, true); len(issues) == 0 {
+		t.Fatal("required contracts must fail when directory is missing")
+	}
+}
+
 func TestValidateManifestGate(t *testing.T) {
 	root := t.TempDir()
 

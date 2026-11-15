@@ -78,7 +78,7 @@ def setup_stage(centre, radius):
 
 def configure_render(asset):
     scene = bpy.context.scene
-    # Blender 5.x removed BLENDER_EEVEE_NEXT (it is BLENDER_EEVEE again).
+    # Blender 5.x removed the 4.x EEVEE_NEXT engine id (it is BLENDER_EEVEE).
     # See the 5.x API migration table in skills/blender-core/SKILL.md. Dynamic
     # enums under-report their valid values, so probe by assignment.
     chosen = None
@@ -123,7 +123,7 @@ def main():
     else:
         _flat_preview(out)
 
-    save_blend(a)  # --blend-out work/<id>/06-render.blend (if .blend)
+    save_blend(a, "render")  # --blend-out work/<id>/06-render.blend (if .blend)
     log("done -> %s" % a.out)
 
 

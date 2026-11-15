@@ -22,7 +22,7 @@
 - **参考插件 ACT**：`https://github.com/mrven/Blender-Asset-Creation-Toolset`（GPL-3.0）。
   - 只对齐其行为与参数，**不复制 / 不 vendoring 其源码**，避免 GPL 污染本仓库 MIT 许可。
   - 采用其 `"Unity"` 导出档（支持动画）；不采用 `"Unity (Pre-Rotated)"`（不支持动画）。Unity 导入需勾 **Bake Axis Conversion**。
-- **系统 Python 3.14.3** 仅用于开发机辅助检查（如 `py_compile`），**不进入交付流水线**。
+- **系统 Python** 仅用于开发机 / CI 的**测试 harness 与辅助检查**（`testing/mock_bpy.py` / `fake_blender.py` / 阶段级 unittest / `py_compile`），**不进入交付流水线**；`scripts/verify.py` 只是转调 Go `assetctl verify` 的兼容 shim，不含验证逻辑。交付物 = Go CLI/编排 + Blender 5.2 内置 bpy 脚本。
 - **目标引擎**：Unity（URP 优先），资产以 FBX + PBR 贴图交付。
 
 ## 语言分工（硬性）
@@ -53,7 +53,11 @@
 | `SKILL.md` | 可复用 Skill 入口，供其它项目引用本流水线 |
 | `cmd/assetctl/` | Go 1.27 CLI 入口（`assetctl`） |
 | `internal/{config,strategy,runner,reference,validate}/` | Go 编排器：配置、策略注册、六阶段执行、参考图、校验 |
-| `scripts/blender/` | Blender 5.2 内运行的 `bpy` 脚本（六阶段 + rig_check + humanoid_rig + tripo_to_unity） |
+| `scripts/blender/` | Blender 5.2 内运行的 `bpy` 脚本（10 个：六阶段 + rig_check + humanoid_rig + tripo_to_unity + common） |
+| `internal/verify/` + `scripts/verify.py` | Go 实现的一键验证（9 步）+ 兼容 shim；验证逻辑不在系统 Python 中 |
+| `testing/` | `mock_bpy.py` / `fake_blender.py` / `harness.py` / 阶段级 unittest（仅测试，不进交付） |
+| `skills/` | 参考 EL4CTEO/blender-skills（MIT）的 28 个 SKILL.md 与 Go+bpy 适配（见 skills/README.md） |
+| `.github/workflows/ci.yml` | 3-OS 矩阵（Win/Linux/macOS）一键验证 |
 | `docs/` | 分阶段流水线文档（00/10/20…80 编号） |
 | `examples/` | `asset.json`、参考图、Tripo 提示词示例 |
 | `assets/<id>/asset.json` | 每个资产的配置 |
@@ -69,6 +73,7 @@ Unity 导入后贴图/骨骼/动画均可用（无粉材质、无 T-pose、Avata
 ```bash
 go build ./... && go vet ./... && go test ./...        # go test ./... 即完整自动化验证，无需装 Blender
 go run ./cmd/assetctl doctor                            # 工具链报告（v2 新增）
+go run ./cmd/assetctl verify                           # 一键生产级验证（9 步，Go 实现，v2.1）
 go run ./cmd/assetctl strategies                       # 列出供应商，tripo 标注 DEFAULT
 go run ./cmd/assetctl init hero-knight --humanoid       # 默认 strategy=tripo
 go run ./cmd/assetctl init hero-knight --handoff fixture  # CI 无人值守（默认供应商也能全自动）

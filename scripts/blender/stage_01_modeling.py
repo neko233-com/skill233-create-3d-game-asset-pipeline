@@ -99,7 +99,7 @@ def main():
             warn("humanoid rig creation failed: %s" % exc)
 
     cleanup_scene(cfg)
-    save_blend(a)
+    save_blend(a, "modeling")
     log("done -> %s" % a.out)
 
 

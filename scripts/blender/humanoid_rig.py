@@ -110,3 +110,23 @@ def create_clips(arm, asset, animations):
         except Exception as exc:
             log("WARN clip %s: %s" % (clip, exc))
         log("created clip %s" % clip)
+
+
+if __name__ == "__main__":
+    # Standalone execution under testing/fake_blender.py: build a complete
+    # Unity-Humanoid rig, persist it and publish a contract like every stage.
+    from common import (  # noqa: E402
+        parse_args, derive_asset, write_contract, ensure_dir, abs_path,
+    )
+
+    a = parse_args()
+    asset = a.asset or derive_asset(a.inp or a.out) or "rig-probe"
+    clips = ["idle", "walk", "attack"]
+    arm = create_humanoid_rig(asset, clips)
+    create_clips(arm, asset, clips)
+    out = a.blend_out or ("work/%s/humanoid-rig.blend" % asset)
+    ensure_dir(out)
+    bpy.ops.wm.save_as_mainfile(filepath=abs_path(out))
+    write_contract(asset, "humanoid-rig", [out], inp=a.inp, out=out,
+                   blend_out=out,
+                   extra={"bones": len(arm.data.bones), "clips": clips})

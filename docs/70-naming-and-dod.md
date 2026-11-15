@@ -67,7 +67,7 @@ AGENTS.md 规定使用 Conventional Commits：
 
 ## 6. Definition of Done（SPEC.md §11）
 
-总门禁一句话：**`assetctl validate` 通过（含 `manifest.json` 六阶段全 `ok`）+ `assetctl doctor` 通过 + Unity 中无粉材质、无 T-pose、Avatar 映射无红项。**
+总门禁一句话：**`assetctl validate` 通过（含 `manifest.json` 六阶段全 `ok`、`contracts/<stage>.json` SHA-256 一致、产物非零且 magic 正确）+ `assetctl doctor` 通过 + `assetctl verify` 全绿 + Unity 中无粉材质、无 T-pose、Avatar 映射无红项。**
 
 ### 6.1 逐项 DoD 勾选清单
 
@@ -91,7 +91,8 @@ AGENTS.md 规定使用 Conventional Commits：
 - [ ] `build/<id>/manifest.json` 记录各阶段状态 + DoD 结果，且**六阶段全为 `ok`**（`assetctl validate` 的 DoD 门禁）
 - [ ] `preview.png` 已生成（[43](43-stage-06-render-composite.md)）
 - [ ] **`assetctl doctor` 工具链报告通过**（Go 1.27 / Blender 5.2 或 `ASSETCTL_BLENDER` / 供应商+DEFAULT / Tripo URL / axes / 六阶段脚本齐备）
-- [ ] **`assetctl validate` 通过**
+- [ ] **`assetctl validate` 通过**（含六份 `contracts/<stage>.json` 的 SHA-256 重算一致、产物非零字节与 PNG/GLB magic 正确）
+- [ ] **`assetctl verify` 9 步全绿**（`go test` 内含非 dry-run 六阶段 E2E；Python 阶段测试覆盖 10 个 bpy 模块）
 - [ ] Unity 中**无粉材质**（贴图 / Shader 丢失）
 - [ ] Unity 中**无 T-pose**（Rig → Humanoid、Avatar 配置正确）
 - [ ] **Avatar 映射无红项**（Configure 里无缺失骨骼）

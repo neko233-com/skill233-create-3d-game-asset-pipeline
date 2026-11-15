@@ -22,7 +22,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import bpy  # noqa: E402
 
-from common import log, parse_args, open_input, first_armature  # noqa: E402
+from common import (  # noqa: E402
+    log, parse_args, open_input, first_armature, write_contract, derive_asset,
+)
 
 REQUIRED = [
     "Hips", "Spine", "Chest", "Neck", "Head",
@@ -87,6 +89,11 @@ def main():
         b = bones[key]
         print("  %s: head=%s" % (b.name, tuple(round(v, 3) for v in b.head_local)))
     sys.stdout.flush()
+    # Gate result is a first-class, machine-checkable artefact.
+    write_contract(a.asset or derive_asset(path), "rig-check", [path],
+                   inp=path, out=path,
+                   extra={"gate": "humanoid", "result": "ok",
+                          "requiredBones": len(REQUIRED), "bones": len(bones)})
 
 
 if __name__ == "__main__":

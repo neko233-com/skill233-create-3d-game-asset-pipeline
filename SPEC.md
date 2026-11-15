@@ -3,6 +3,8 @@
 本文件是本仓库的**规范性契约**。所有文档、Go 编排器、Blender 脚本必须与之一致；冲突时以本文件为准。
 版本 / URL 的硬性约束另见 [AGENTS.md](AGENTS.md)。
 
+> **v2.1 changelog（相对 v2）**：新增 §5A 阶段文件契约（10 个 bpy 模块各产出 `contracts/<stage>.json`，含 SHA-256 / 字节数 / FBX 七参数，`assetctl validate` 默认重算校验）；`assetctl verify`（Go 实现，9 步）与 3-OS CI；非 dry-run 六阶段 E2E 集成测试；阶段级 Python 测试（10 模块 + mock_bpy）；fixture GLB 改为含真实三角形；修复 resume manifest 降级、输出流数据竞争、env handoff 校验、Blender 5.x EEVEE API 与跨平台 Blender 发现。语言边界：系统 Python 仅测试 harness，交付逻辑全 Go + bpy。
+>
 > **v2 changelog（相对 v1）**：`tripo` 升级为**默认生产供应商（DEFAULT Supplier）**，取代原先默认的 `blender` 参数化策略；新增供应商交付机制 `handoff`（`manual | file | fixture`）与环境变量覆盖，让「人在回路」的默认供应商可脚本化、可测试；新增 `internal/runner` 的 `Launcher` 抽象与 `testing/fake_blender.py` 全链路无 Blender 自测；新增 `assetctl doctor` 与 `assetctl validate` 的 `manifest.json` 全 `ok` DoD 门禁；`assetctl init` 新增 `--handoff` / `--source` / `--supplier` 标志。§1/§2 硬约束、六阶段、FBX 七参数、ACT 映射、命名与许可保持不变。
 
 ## 1. 目标
@@ -85,7 +87,9 @@ type Strategy interface {
 - `assetctl validate` 除既有检查外，额外校验 `build/<id>/manifest.json`：**六阶段必须全部为 `ok`**（DoD 门禁）。
 - 新增 `assetctl doctor`：打印工具链报告——Go 版本、Blender 5.2 是否存在 / `ASSETCTL_BLENDER`、已注册供应商 + DEFAULT、Tripo URL、坐标轴契约、`scripts/blender` 阶段脚本是否齐全、退出码。用于生产环境 onboarding 自检。
 
-一键验证脚本 `scripts/verify.py`：`go build`、`go vet`、unix 上 `go test -race -cover` / Windows 上普通 `go test`、`py_compile` 所有 `scripts/blender/*.py`、`python -m unittest discover -s testing`；`Makefile` 的 `verify` target 调用它；`.github/workflows/ci.yml` 为 3-OS 矩阵（ubuntu / macos / windows）+ Go 1.27 + setup-python。**再次强调：`go test ./...` 本身即完整验证，不需要 Blender。**
+**一键验证 = `assetctl verify`（Go 1.27 实现，`internal/verify/verify.go`）**，共 9 步：仓库布局（10 个 bpy 脚本 + harness）、`go.mod` 零第三方依赖校验、`go build ./...`、`go vet ./...`、`go test ./... -count=1 -coverprofile=coverage.out`（Unix 额外 `-race`，Windows 因 cgo 限制不启用 race）、`py_compile` 所有 bpy/测试脚本、`python -m unittest discover -s testing`、`assetctl doctor`、CLI 冒烟。`scripts/verify.py` 只是调用它的兼容 shim（**验证逻辑不在系统 Python 中**），`make verify` 同样转调 Go 命令；`.github/workflows/ci.yml` 为 3-OS 矩阵（ubuntu / macos / windows）+ Go 1.27 + setup-python，并上传 `coverage.out`。
+
+`go test ./...` 本身即完整自动化验证：包含 **非 dry-run 六阶段 E2E**（`ScriptLauncher` 驱动真实 bpy 脚本）、Go 全量单测与 CLI 测试；`python -m unittest discover -s testing` 覆盖 10 个 bpy 模块、契约与 mock_bpy 自身。**全程不需要安装 Blender 5.2。**
 
 ## 4. 游戏美术全流程（六阶段，顺序固定）
 
@@ -120,6 +124,22 @@ Go runner 为每个阶段统一传递：
 | 6 render | `build/<id>/<id>.fbx` | `build/<id>/preview.png` |
 
 人形门禁：阶段 5 之后，若 `humanoid: true`，额外跑 `scripts/blender/rig_check.py`。
+
+## 5A. 阶段文件契约（v2.1 新增门禁）
+
+`scripts/blender` 下 **10 个 Python 模块**都能在 `testing/fake_blender.py`（mock_bpy）下独立执行，并在 `build/<id>/contracts/<stage>.json` 产出契约文件：
+
+| 契约 id | 生产者 |
+|---------|--------|
+| `modeling` / `topology-uv` / `bake` / `pbr` / `unity-export` / `render` | 六阶段脚本 |
+| `rig-check` | `rig_check.py`（humanoid 门禁结果） |
+| `tripo-to-unity` | `tripo_to_unity.py`（独立 shim） |
+| `common` | `common.py`（常量 / FBX 导出参数快照） |
+| `humanoid-rig` | `humanoid_rig.py`（独立 rig 构建） |
+
+契约 `schema = 1`，字段包含 `asset / stage / input / output / blendOut / tripoUrl / blenderVersion / unityEngine / fbxExport`（§9 七参数）与 `outputs` 数组（每项 `path` 为相对 repo root 的 POSIX 路径、`bytes`、`sha256`）。脚本同时以 `@@JSON@@ <json>` 行协议向 Go / 测试输出结构化摘要（沿用 blender-skills 约定）。
+
+`assetctl validate --expect-contracts=true`（**CLI 默认**）逐份重读文件、重算 SHA-256；缺契约、schema 不符、stage 名不符、空 `outputs`、字节数或摘要不一致均判 DoD 失败。`--expect-contracts=false` 仅用于校验历史资产。该机制使「脚本静默成功但没有真正产物」不可能通过交付门禁。
 
 ## 6. 目录约定
 
@@ -167,9 +187,10 @@ assetctl stages                              # 列出六阶段
 assetctl init <asset-id> [--strategy tripo] [--supplier <id>] [--handoff <manual|file|fixture>] [--source <path>] [--kind character] [--humanoid]
 assetctl run <asset-id> [--strategy <id>] [--from <stage>] [--only <stage,...>] [--dry-run]
 assetctl reference prepare <in.png> <outdir> [--size 1024] [--bg 808080]
-assetctl validate <build-dir> [--expect-humanoid] [--expect-textures]
+assetctl validate <build-dir> [--expect-humanoid] [--expect-textures] [--expect-manifest=true|false] [--expect-contracts=true|false]
 assetctl blender <script> [-- --args...]     # 透传 Blender 5.2
 assetctl doctor                              # 工具链报告（v2 新增）
+assetctl verify                              # 一键生产级验证（9 步，Go 实现，v2.1）
 ```
 
 - `assetctl init` 默认 `--strategy tripo`；`--supplier` 是 `--strategy` 的别名；`--handoff` / `--source` 写入 `asset.json.handoff`（见 §3A.1）。
@@ -214,7 +235,7 @@ ACT 2025.2 支持 Blender 3.0–5.0+，可与本机 **Blender 5.2** 并存；其
 - 资产 ID：小写连字符 `hero-knight`；clip：`hero-knight-idle`。
 - 贴图后缀：`_basecolor` / `_normal` / `_roughness` / `_metallic` / `_ao`；`preview.png` 为 QA 产物，豁免 PBR 后缀检查。
 - Humanoid 骨骼（21 根）：`Hips` / `Spine` / `Chest` / `Neck` / `Head` / `Left…` / `Right…`，左右用 `Left`/`Right` 前缀；阶段 5 后 `rig_check.py` 门禁；clip `<id>-idle`。
-- DoD：`assetctl validate` 通过（含 `manifest.json` 六阶段全 `ok`）+ `assetctl doctor` 通过 + Unity 中无粉材质、无 T-pose、Avatar 映射无红项。
+- DoD：`assetctl validate` 通过（含 `manifest.json` 六阶段全 `ok`、六份阶段契约 SHA-256 一致、交付产物非零且 magic 正确）+ `assetctl doctor` 通过 + `assetctl verify` 全绿 + Unity 中无粉材质、无 T-pose、Avatar 映射无红项（SPEC.md §3A.3 / §5A）。
 
 ## 12. 许可证
 

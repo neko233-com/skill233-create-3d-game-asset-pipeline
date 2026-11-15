@@ -12,6 +12,8 @@ Tripo source: https://studio.tripo3d.com/
 """
 
 import argparse
+import glob
+import hashlib
 import json
 import os
 import sys
@@ -34,6 +36,11 @@ FBX_EXPORT = dict(
 )
 
 PBR_SUFFIXES = ("basecolor", "normal", "roughness", "metallic", "ao")
+
+# Every script execution writes build/<asset>/contracts/<stage>.json. Go's
+# `assetctl validate --expect-contracts` verifies schema, stage names, byte
+# counts and SHA-256 digests — a silent no-op stage can no longer pass DoD.
+CONTRACT_SCHEMA = 1
 
 
 def log(msg):
@@ -166,9 +173,102 @@ def open_input(inp):
     log("opened input %s" % inp)
 
 
-def save_blend(a):
-    """Save the .blend work file(s). Stage 5/6 have a non-.blend --out (FBX /
-    PNG), so only paths ending in .blend are written; duplicates are removed."""
+def contract_path(asset, stage):
+    return os.path.join(build_dir(asset), "contracts", "%s.json" % stage)
+
+
+def emit_json(payload):
+    """Machine-readable result line; mirrors the @@JSON@@ convention from the
+    blender-skills reference collection (skills/README.md)."""
+    print("@@JSON@@ " + json.dumps(payload, sort_keys=True))
+    sys.stdout.flush()
+
+
+def derive_asset(path):
+    """Best-effort asset id from a deliverable path (the rig_check gate has no
+    --asset flag)."""
+    return os.path.splitext(os.path.basename(path or ""))[0]
+
+
+def _rel(path):
+    try:
+        return os.path.relpath(path, os.getcwd()).replace(os.sep, "/")
+    except ValueError:  # different drives on Windows
+        return path.replace(os.sep, "/")
+
+
+def collect_outputs(a):
+    """Files owned by this stage: --out, --blend-out and any PNGs already in
+    build/<asset>/ (PBR maps + stage-6 preview)."""
+    paths = [a.out, a.blend_out]
+    if getattr(a, "asset", ""):
+        # Only PBR maps (name contains `_`). preview.png belongs to stage 6
+        # and is REWRITTEN later — including it here would invalidate an
+        # earlier stage's SHA-256 digest during `assetctl validate`.
+        paths += sorted(glob.glob(os.path.join(build_dir(a.asset), "*_*.png")))
+    return paths
+
+
+def write_contract(asset, stage, outputs=None, inp="", out="", blend_out="",
+                   extra=None):
+    """Write build/<asset>/contracts/<stage>.json and emit a @@JSON@@ summary.
+
+    Go's `assetctl validate --expect-contracts` checks schema, stage name,
+    byte counts and SHA-256 digests, so a stage that silently produces nothing
+    can no longer pass DoD. bpy + stdlib only (hashlib ships with Blender's
+    bundled Python; no pip, no system Python in the delivery pipeline).
+    """
+    if not asset:
+        warn("contract skipped: no asset id for stage %s" % stage)
+        return ""
+    files = []
+    seen = set()
+    for p in (outputs or []):
+        if not p:
+            continue
+        ap = abs_path(p)
+        if ap in seen or not os.path.isfile(ap):
+            continue
+        seen.add(ap)
+        with open(ap, "rb") as fh:
+            raw = fh.read()
+        files.append({
+            "path": _rel(ap),
+            "bytes": len(raw),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+        })
+    doc = {
+        "schema": CONTRACT_SCHEMA,
+        "asset": asset,
+        "stage": stage,
+        "input": inp,
+        "output": out,
+        "blendOut": blend_out,
+        "tripoUrl": TRIPO_URL,
+        "blenderVersion": BLENDER_VERSION,
+        "unityEngine": UNITY_ENGINE,
+        "fbxExport": dict(FBX_EXPORT),
+        "outputs": files,
+    }
+    if extra:
+        doc.update(extra)
+    path = contract_path(asset, stage)
+    ensure_dir(path)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(doc, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+    emit_json({"contract": _rel(path), "stage": stage, "outputs": len(files)})
+    log("wrote contract -> %s (%d file(s))" % (path, len(files)))
+    return path
+
+
+def save_blend(a, stage=None):
+    """Save the .blend work file(s) and publish the stage contract.
+
+    Stage 5/6 have a non-.blend --out (FBX / PNG), so only paths ending in
+    .blend are written. Passing `stage` (e.g. "modeling") makes this the single
+    point where every pipeline stage publishes its file contract.
+    """
     seen = set()
     for p in (a.out, a.blend_out):
         if p and p.lower().endswith(".blend") and abs_path(p) not in seen:
@@ -176,6 +276,9 @@ def save_blend(a):
             ensure_dir(p)
             bpy.ops.wm.save_as_mainfile(filepath=abs_path(p))
             log("saved blend -> %s" % p)
+    if stage:
+        write_contract(a.asset, stage, collect_outputs(a), inp=a.inp,
+                       out=a.out, blend_out=a.blend_out)
 
 
 def set_active(obj):
@@ -295,3 +398,23 @@ def export_fbx(path, cfg=None, humanoid=None):
     )
     bpy.ops.export_scene.fbx(**kwargs)
     log("exported FBX -> %s (humanoid=%s)" % (path, humanoid))
+
+
+if __name__ == "__main__":
+    # `assetctl verify` and testing/test_stages.py execute EVERY module under
+    # scripts/blender with fake_blender.py — including library modules. This
+    # entry point publishes the shared constants as a contract file.
+    a = parse_args()
+    asset = a.asset or derive_asset(a.inp or a.out) or "contract-probe"
+    write_contract(
+        asset, "common",
+        [p for p in (a.inp, a.out, a.blend_out) if p],
+        inp=a.inp, out=a.out, blend_out=a.blend_out,
+        extra={
+            "module": "common",
+            "pbrSuffixes": list(PBR_SUFFIXES),
+            "fbxExportKeys": sorted(FBX_EXPORT.keys()),
+            "helpers": ["parse_args", "load_config", "open_input", "save_blend",
+                        "ensure_textures", "export_fbx", "write_contract"],
+        },
+    )

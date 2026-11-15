@@ -121,7 +121,7 @@ def main():
     cleanup_materials(mat)
 
     cleanup_scene(cfg)
-    save_blend(a)
+    save_blend(a, "pbr")
     log("done -> %s" % a.out)
 
 

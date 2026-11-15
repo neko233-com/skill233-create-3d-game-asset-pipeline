@@ -81,6 +81,14 @@ v2 为「无需安装 Blender 5.2 也能端到端验证六阶段」引入两处*
 
 > `internal/runner` 的 `Launcher` 抽象把两者隔开：生产 = `CommandLauncher`（真实 Blender 5.2），CI / 测试 = `ScriptLauncher`（`fake_blender.py`）。因此 **`go test ./...` 本身就是完整的自动化验证**，不需要安装 Blender 5.2；系统 Python 在这里依旧只是「测试辅助」，不是交付运行时。
 
+### 4.2 验证链路的语言边界（v2.1）
+
+`assetctl verify` 是 **Go 1.27** 命令（`internal/verify/verify.go`），负责编排全部检查：仓库布局、零第三方依赖、build / vet / test（Unix `-race` + `coverage.out`）、`py_compile`、阶段级 unittest、doctor、CLI 冒烟。`scripts/verify.py` 只是一个 20 行的兼容 shim，用 `subprocess.call` 转调该 Go 命令，**不含任何验证逻辑**。
+
+`testing/` 下的 `mock_bpy.py` / `fake_blender.py` / `harness.py` / `test_*.py` 属于 **测试基础设施**，用开发机 / CI 的系统 Python 运行；它们把 `bpy` 模拟进 `sys.modules`，让 10 个 `scripts/blender/*.py` 在**没有 Blender** 的情况下按真实 argv 逐进程执行并产出契约文件。这部分代码**不进入交付流水线**：生产时 `runner.CommandLauncher` 拉起的是 Blender 5.2 自带的 Python 与原生 `bpy`。
+
+因此用户约定「python3 不需要，只需要 bpy（Blender py），其余用 go 实现」在新架构中成立：交付物 = Go CLI/编排 + Blender 内置 bpy 脚本；系统 Python 只在测试与兼容 shim 中出现。
+
 ## 5. `blender --background --factory-startup --python` 调用约定
 
 Go runner 统一按此约定拉起 Blender 5.2（SPEC.md §2/§5）：

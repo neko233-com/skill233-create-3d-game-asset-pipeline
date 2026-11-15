@@ -3,6 +3,7 @@ package validate
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,9 +21,10 @@ var pbrHints = []string{"basecolor", "albedo", "normal", "roughness", "metallic"
 
 // Options for Validate.
 type Options struct {
-	ExpectHumanoid bool
-	ExpectTextures bool
-	ExpectManifest bool // require build/<id>/manifest.json with six "ok" stages (DoD, SPEC.md §3A.3)
+	ExpectHumanoid  bool
+	ExpectTextures  bool
+	ExpectManifest  bool // require build/<id>/manifest.json with six "ok" stages (DoD, SPEC.md §3A.3)
+	ExpectContracts bool // require six stage contracts with matching SHA-256 digests (SPEC.md §5A)
 }
 
 // Result is the validation report.
@@ -105,6 +107,7 @@ func Validate(dir string, opt Options) (*Result, error) {
 	// DoD gate: when a manifest exists, all six stages MUST be "ok" regardless
 	// of ExpectManifest; a missing manifest only fails when explicitly required.
 	r.Issues = append(r.Issues, checkManifest(dir, opt.ExpectManifest)...)
+	r.Issues = append(r.Issues, checkContracts(dir, opt.ExpectContracts)...)
 	return r, nil
 }
 
@@ -157,10 +160,90 @@ func checkManifest(dir string, require bool) []string {
 	return issues
 }
 
+// checkContracts enforces the v2 stage file contract (SPEC.md §5A). Every
+// stage writes build/<id>/contracts/<stage>.json with the digest of each file
+// it produced; the Go side re-reads those files so a stage that "succeeded"
+// without producing real bytes cannot pass DoD.
+func checkContracts(dir string, require bool) []string {
+	contractsDir := filepath.Join(dir, "contracts")
+	if st, err := os.Stat(contractsDir); err != nil || !st.IsDir() {
+		if require {
+			return []string{"--expect-contracts set but build/<id>/contracts/ missing"}
+		}
+		return nil
+	}
+	id := filepath.Base(filepath.Clean(dir))
+	root := filepath.Dir(filepath.Dir(dir)) // build/<id> -> repo root
+	var issues []string
+	for _, stage := range config.Stages {
+		p := filepath.Join(contractsDir, stage+".json")
+		data, err := os.ReadFile(p)
+		if err != nil {
+			issues = append(issues, fmt.Sprintf("missing stage contract %s.json", stage))
+			continue
+		}
+		var c struct {
+			Schema    int    `json:"schema"`
+			Asset     string `json:"asset"`
+			Stage     string `json:"stage"`
+			FBXExport map[string]interface{} `json:"fbxExport"`
+			Outputs   []struct {
+				Path   string `json:"path"`
+				Bytes  int64  `json:"bytes"`
+				SHA256 string `json:"sha256"`
+			} `json:"outputs"`
+		}
+		if err := json.Unmarshal(data, &c); err != nil {
+			issues = append(issues, fmt.Sprintf("stage contract %s.json is invalid JSON: %v", stage, err))
+			continue
+		}
+		if c.Schema != 1 {
+			issues = append(issues, fmt.Sprintf("stage contract %s.json schema = %d, want 1", stage, c.Schema))
+		}
+		if c.Stage != stage {
+			issues = append(issues, fmt.Sprintf("stage contract %s.json declares stage %q", stage, c.Stage))
+		}
+		if c.Asset != "" && c.Asset != id {
+			issues = append(issues, fmt.Sprintf("stage contract %s.json asset = %q, want %q", stage, c.Asset, id))
+		}
+		if len(c.Outputs) == 0 {
+			issues = append(issues, fmt.Sprintf("stage contract %s.json lists no produced files", stage))
+		}
+		for _, key := range []string{"axis_forward", "axis_up", "global_scale",
+			"apply_unit_scale", "add_leaf_bones", "path_mode"} {
+			if _, ok := c.FBXExport[key]; !ok {
+				issues = append(issues, fmt.Sprintf("stage contract %s.json missing FBX export key %q", stage, key))
+			}
+		}
+		for _, o := range c.Outputs {
+			full := filepath.Join(root, filepath.FromSlash(o.Path))
+			raw, err := os.ReadFile(full)
+			if err != nil {
+				issues = append(issues, fmt.Sprintf("contract %s.json references missing file %s", stage, o.Path))
+				continue
+			}
+			if int64(len(raw)) != o.Bytes {
+				issues = append(issues, fmt.Sprintf("contract %s.json: %s size %d != %d", stage, o.Path, len(raw), o.Bytes))
+			}
+			if got := fmt.Sprintf("%x", sha256.Sum256(raw)); got != strings.ToLower(o.SHA256) {
+				issues = append(issues, fmt.Sprintf("contract %s.json: %s SHA-256 mismatch", stage, o.Path))
+			}
+		}
+	}
+	return issues
+}
+
 // checkArtifactIntegrity verifies that a deliverable is non-empty and that
 // binary formats carry their canonical magic bytes. ASCII FBX / OBJ / glTF
 // are text formats and only get the non-empty check.
 func checkArtifactIntegrity(path, ext string) string {
+	// Only delivery artifacts are checked. Markers (.humanoid, deliberately
+	// empty) and contracts (.json) are metadata, not model/texture payloads.
+	switch ext {
+	case ".fbx", ".glb", ".gltf", ".obj", ".png", ".jpg", ".jpeg", ".tga":
+	default:
+		return ""
+	}
 	st, err := os.Stat(path)
 	if err != nil {
 		return fmt.Sprintf("cannot stat artifact %s: %v", filepath.Base(path), err)
