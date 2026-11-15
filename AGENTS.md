@@ -55,7 +55,7 @@
 | `cmd/assetctl/` | Go 1.27 CLI 入口（`assetctl`） |
 | `internal/{config,strategy,runner,reference,validate,skills,verify}/` | Go 编排器：配置、策略注册、六阶段执行、参考图、校验、skills 注册表、一键验证 |
 | `scripts/blender/` | Blender 5.2 内运行的 `bpy` 脚本（11 个：六阶段 + rig_check + humanoid_rig + tripo_to_unity + common + skill_run） |
-| `internal/verify/` + `scripts/verify.py` | Go 实现的一键验证（11 步）+ 兼容 shim；验证逻辑不在系统 Python 中 |
+| `internal/verify/` + `scripts/verify.py` | Go 实现的一键验证（12 步）+ 兼容 shim；验证逻辑不在系统 Python 中 |
 | `testing/` | `mock_bpy.py` / `fake_blender.py` / `harness.py` / 阶段级 + skills unittest（仅测试，不进交付） |
 | `skills/` | 照抄 EL4CTEO/blender-skills（MIT）的 28 个 SKILL.md + ADAPTATION.md + `manifest.json`（Go 侧据此校验，见 SPEC.md §8A） |
 | `.github/workflows/ci.yml` | 3-OS 矩阵（Win/Linux/macOS）一键验证 |
@@ -75,7 +75,7 @@ Unity 导入后贴图/骨骼/动画均可用（无粉材质、无 T-pose、Avata
 go build ./... && go vet ./... && go test ./...        # go test ./... 即完整自动化验证，无需装 Blender
 go run ./cmd/assetctl doctor                            # 工具链报告（v2 新增）
 go run ./cmd/assetctl skills doctor                     # 28 skills 注册表一致性（v2.2 新增）
-go run ./cmd/assetctl verify                           # 一键生产级验证（11 步，Go 实现，v2.2）
+go run ./cmd/assetctl verify                           # 一键生产级验证（12 步，Go 实现，v2.2）
 go run ./cmd/assetctl skills list                       # 列出 28 个 Blender skills
 go run ./cmd/assetctl skills run blender-core --asset hero-knight   # 单跑一个 skill（需 Blender 5.2）
 go run ./cmd/assetctl strategies                       # 列出供应商，tripo 标注 DEFAULT

@@ -78,7 +78,7 @@ description: 游戏美术管线向的 3D 游戏资产生产流水线：Go 1.27 �
 go build ./... && go vet ./... && go test ./...   # 含非 dry-run 六阶段 E2E
 python -m unittest discover -s testing           # 11 个 bpy 模块 + 28 skills + 契约 + mock_bpy
 python scripts/verify.py                         # 兼容 shim，实际转调 Go 的 assetctl verify
-go run ./cmd/assetctl verify                     # 一键生产级验证（推荐，11 步）
+go run ./cmd/assetctl verify                     # 一键生产级验证（推荐，12 步）
 
 # 查看供应商 / 六阶段 / 工具链
 go run ./cmd/assetctl strategies                 # tripo 标注 DEFAULT

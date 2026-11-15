@@ -8,6 +8,7 @@ package verify
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -70,6 +72,7 @@ func Run(root string, stdout, stderr io.Writer) (*Report, error) {
 		{"go build ./...", func() error { return command(abs, "go", "build", "./...") }},
 		{"go vet ./...", func() error { return command(abs, "go", "vet", "./...") }},
 		{"go test ./... (race + coverage on Unix)", func() error { return goTest(abs) }},
+		{"coverage >= " + minCoverageLabel() + "%", func() error { return checkCoverage(abs) }},
 		{"python py_compile (scripts/blender + testing)", func() error {
 			return pyCompile(abs, py, pyFiles)
 		}},
@@ -132,6 +135,86 @@ func goTest(dir string) error {
 		args = append(args, "-race")
 	}
 	return command(dir, "go", args...)
+}
+
+// defaultMinCoverage is the statement-coverage floor for the production gate.
+// Override with ASSETCTL_VERIFY_MIN_COVERAGE (e.g. 0 to disable while
+// refactoring); CI keeps the default so coverage cannot silently regress.
+const defaultMinCoverage = 70.0
+
+func minCoverage() float64 {
+	if v := strings.TrimSpace(os.Getenv("ASSETCTL_VERIFY_MIN_COVERAGE")); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f >= 0 {
+			return f
+		}
+	}
+	return defaultMinCoverage
+}
+
+func minCoverageLabel() string {
+	return strconv.FormatFloat(minCoverage(), 'f', -1, 64)
+}
+
+// checkCoverage parses coverage.out (written by goTest) and enforces the floor.
+func checkCoverage(root string) error {
+	return checkCoverageFile(root, filepath.Join(root, "coverage.out"))
+}
+
+// checkCoverageFile is the testable core. The profile is parsed in pure Go
+// instead of shelling out to `go tool cover`: the tool re-execs `go list`
+// internally, which fails in restricted sandboxes and adds no information we
+// do not already have in the profile.
+func checkCoverageFile(root, profile string) error {
+	data, err := os.ReadFile(profile)
+	if err != nil {
+		return fmt.Errorf("coverage %s missing (run go test -coverprofile first): %w", profile, err)
+	}
+	covered, total, err := parseCoverage(data)
+	if err != nil {
+		return fmt.Errorf("%s is not a usable Go coverage profile: %w", profile, err)
+	}
+	if total == 0 {
+		return fmt.Errorf("coverage profile %s has no statements", profile)
+	}
+	got := float64(covered) / float64(total) * 100
+	if got < minCoverage() {
+		return fmt.Errorf("statement coverage %.1f%% (%d/%d) is below the %.1f%% floor "+
+			"(set ASSETCTL_VERIFY_MIN_COVERAGE to override while refactoring)",
+			got, covered, total, minCoverage())
+	}
+	return nil
+}
+
+// parseCoverage totals the statement coverage of a Go cover profile.
+// Mirrors `go tool cover -func` totals: a block contributes its NumStmt to the
+// denominator always, and to the numerator when Count > 0. Works for the
+// set / count / atomic modes because only zero-vs-nonzero matters.
+func parseCoverage(data []byte) (covered, total int, err error) {
+	lines := strings.Split(string(data), "\n")
+	if len(lines) == 0 || !strings.HasPrefix(strings.TrimSpace(lines[0]), "mode:") {
+		return 0, 0, errors.New(`missing "mode:" header`)
+	}
+	for i, line := range lines[1:] {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// <file>:<startLine>.<startCol>,<endLine>.<endCol> <numStmt> <count>
+		fields := strings.Fields(line)
+		if len(fields) != 3 {
+			return 0, 0, fmt.Errorf("line %d: want 3 fields, got %d (%q)", i+2, len(fields), line)
+		}
+		nStmt, e1 := strconv.Atoi(fields[1])
+		count, e2 := strconv.Atoi(fields[2])
+		if e1 != nil || e2 != nil || nStmt < 0 || count < 0 {
+			return 0, 0, fmt.Errorf("line %d: malformed counts (%q)", i+2, line)
+		}
+		total += nStmt
+		if count > 0 {
+			covered += nStmt
+		}
+	}
+	return covered, total, nil
 }
 
 func findPython(root string) string {

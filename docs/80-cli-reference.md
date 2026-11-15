@@ -16,7 +16,7 @@ assetctl validate <build-dir> [--expect-humanoid] [--expect-textures]
 assetctl blender <script> [-- --args...]     # 透传 Blender 5.2
 assetctl doctor                              # 工具链报告（v2 新增）
 assetctl skills list|show|run|doctor         # 28 个 Blender skills（v2.2 新增，详见 docs/90-skills.md）
-assetctl verify                              # 一键生产级验证（11 步，Go 1.27 实现，v2.2）
+assetctl verify                              # 一键生产级验证（12 步，Go 1.27 实现，v2.2）
 ```
 
 `assetctl run` 依次执行六阶段，写 `build/<id>/manifest.json`；任一阶段失败即停止并记录状态。`--from` / `--only` 支持断点续跑（Tripo 半自动场景必需，尤其 `--from topology-uv`）。`assetctl init` 默认 `strategy=tripo`、`handoff.mode=manual`；`--supplier` 为 `--strategy` 的别名。
@@ -225,7 +225,7 @@ assetctl doctor
 
 ### 3.10 `assetctl verify`（v2.1 新增，一键验证）
 
-Go 1.27 实现（`internal/verify/verify.go`），**逻辑不在系统 Python 中**；`python scripts/verify.py` 与 `make verify` 都只是兼容转调。11 步按序执行、任一失败即停：
+Go 1.27 实现（`internal/verify/verify.go`），**逻辑不在系统 Python 中**；`python scripts/verify.py` 与 `make verify` 都只是兼容转调。12 步按序执行、任一失败即停：
 
 1. 仓库布局（11 个 `scripts/blender/*.py` + `testing/` harness）
 2. Skills 注册表一致性（`skills.ValidateCatalog`：28 个 SKILL.md / ADAPTATION.md / manifest.json / bpy 分派器）
@@ -234,19 +234,21 @@ Go 1.27 实现（`internal/verify/verify.go`），**逻辑不在系统 Python �
 5. `go build ./...`
 6. `go vet ./...`
 7. `go test ./... -count=1 -coverprofile=coverage.out`（Unix 额外 `-race`；Windows 因 cgo 限制不启用 race；含非 dry-run 六阶段 E2E）
-8. `py_compile` 全部 bpy / 测试脚本
-9. `python -m unittest discover -s testing`（11 个 bpy 模块 + 28 skills + 契约 + mock_bpy）
-10. `assetctl doctor`
-11. CLI 冒烟（version / strategies / stages）
+8. 覆盖率门禁：纯 Go 解析 `coverage.out`，默认要求 ≥70%（`ASSETCTL_VERIFY_MIN_COVERAGE` 可覆盖，`0` 关闭）
+9. `py_compile` 全部 bpy / 测试脚本
+10. `python -m unittest discover -s testing`（11 个 bpy 模块 + 28 skills + 契约 + mock_bpy）
+11. `assetctl doctor`
+12. CLI 冒烟（version / strategies / stages）
 
 ```bash
 go run ./cmd/assetctl verify            # 推荐
 make verify                            # 等价
 python scripts/verify.py                # 兼容 shim
 ASSETCTL_VERIFY_NO_RACE=1 make verify   # 跳过 race（无 gcc 的 Unix 环境）
+ASSETCTL_VERIFY_MIN_COVERAGE=0 make verify   # 临时关闭覆盖率门禁（重构期）
 ```
 
-`ASSETCTL_PYTHON` 可指定测试用解释器；CI（`.github/workflows/ci.yml`）在 ubuntu / macos / windows 三平台执行同一命令并上传覆盖率。
+`ASSETCTL_PYTHON` 可指定测试用解释器；`ASSETCTL_VERIFY_MIN_COVERAGE` 调整覆盖率下限（默认 70，非法值回退默认）；CI（`.github/workflows/ci.yml`）在 ubuntu / macos / windows 三平台执行同一命令并上传覆盖率。
 
 ### 3.11 `assetctl skills <list|show|run|doctor>`（v2.2 新增，详见 [90-skills.md](90-skills.md)）
 
