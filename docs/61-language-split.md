@@ -65,10 +65,21 @@ scripts/blender/humanoid_rig.py         # 手动绑定路线（见 50）
 | 项 | 说明 |
 |----|------|
 | 版本 | 本机 **3.14.3**，文档写「系统 Python 3.14」 |
-| 用途 | 开发机上临时核对 `asset.json` / `manifest.json`、一次性文件清点、肉眼比对 |
-| 边界 | **不进入交付流水线**：`assetctl run` 不会调用它，CI 不依赖它，脚本不写在 `scripts/` 里作为阶段实现 |
+| 用途 | 开发机上临时核对 `asset.json` / `manifest.json`、一次性文件清点、肉眼比对；以及 **CI / 测试辅助**（见 §4.1） |
+| 边界 | **不进入交付流水线**：`assetctl run` 不会调用它，生产交付不依赖它，脚本不写在 `scripts/` 里作为阶段实现 |
 
-> 历史说明：旧仓库曾有 `scripts/python/prepare_reference.py`（用 Pillow）与 `scripts/python/validate_assets.py`，那是旧单体架构。新架构把参考图处理收敛到 `assetctl reference prepare`（Go 1.27 标准库）、把校验收敛到 `assetctl validate`（Go 1.27），系统 Python 只剩「开发机辅助」角色。本套文档只以 SPEC.md 为准，不要求安装 Pillow。
+> 历史说明：旧仓库曾有 `scripts/python/prepare_reference.py`（用 Pillow）与 `scripts/python/validate_assets.py`，那是旧单体架构。新架构把参考图处理收敛到 `assetctl reference prepare`（Go 1.27 标准库）、把校验收敛到 `assetctl validate`（Go 1.27），系统 Python 只剩「开发机辅助 / 测试辅助」角色。本套文档只以 SPEC.md 为准，不要求安装 Pillow。
+
+### 4.1 CI / 测试专用的系统 Python（dev/test-only，**不进交付**）
+
+v2 为「无需安装 Blender 5.2 也能端到端验证六阶段」引入两处**开发 / 测试专用**的 Python，它们同样属于「系统 Python 辅助」范畴，**绝不进入交付流水线**：
+
+| 文件 | 角色 | 边界 |
+|------|------|------|
+| `testing/fake_blender.py` | 纯标准库（`zlib` / `struct`）的 `bpy` + `mathutils` 模拟器：通过写入 `.blend` / `.fbx` 的 JSON 快照在多个阶段进程间持久化场景状态、写出真实 PNG | 仅在 `go test ./...` / CI 中由 `ScriptLauncher` 拉起；**不产出交付物**，生产用 `CommandLauncher` 调真实 Blender 5.2 |
+| `scripts/verify.py` | 一键验证脚本：`go build` / `go vet` / `go test`（unix 带 `-race -cover`，Windows 普通）/ `py_compile` 所有 `scripts/blender/*.py` / `python -m unittest discover -s testing` | 由 `Makefile` 的 `verify` target 与 `.github/workflows/ci.yml` 调用；纯开发自测工具，六阶段交付不依赖它 |
+
+> `internal/runner` 的 `Launcher` 抽象把两者隔开：生产 = `CommandLauncher`（真实 Blender 5.2），CI / 测试 = `ScriptLauncher`（`fake_blender.py`）。因此 **`go test ./...` 本身就是完整的自动化验证**，不需要安装 Blender 5.2；系统 Python 在这里依旧只是「测试辅助」，不是交付运行时。
 
 ## 5. `blender --background --factory-startup --python` 调用约定
 
@@ -106,7 +117,7 @@ assetctl blender scripts/blender/rig_check.py -- --input build/hero-knight/hero-
 | 编排 / CLI / 配置 / 校验 / 参考图 → **Go 1.27** | 单二进制、零第三方依赖、类型安全、适合 CI 与 MIT 许可；不碰 `bpy` |
 | Blender 内部操作 → **Blender 5.2 内置 Python（`bpy`）** | `bpy` 只在 Blender 进程里存在；算子调用是最短路径；「他原生代码用什么就用什么」 |
 | 不在 Blender 里 `pip install` / 不假设系统 Python | 避免两套 Python 环境耦合，保证 `--factory-startup` 可重复、CI 与本机一致 |
-| 系统 Python 3.14 仅开发机辅助 | 不进交付，避免把 Pillow 等依赖带回流水线 |
+| 系统 Python 3.14 仅开发机 / 测试辅助（`fake_blender.py` 模拟、`scripts/verify.py` 一键验证） | 不进交付，避免把 Pillow 等依赖带回流水线；`go test ./...` 无需 Blender 即可跑通六阶段 |
 | 统一 `--background --factory-startup --python ... --` 约定 | 一个调用形态覆盖六阶段 + rig 校验，Go 侧只管传 `--asset/--config/--in/--out` 与收退出码 |
 | 版本硬锁 Go 1.27 / Blender 5.2 / Tripo https://studio.tripo3d.com/ | 见 AGENTS.md；升级先改约束文件再改脚本/文档 |
 
@@ -114,4 +125,4 @@ assetctl blender scripts/blender/rig_check.py -- --input build/hero-knight/hero-
 - [ ] 阶段脚本只依赖 `bpy` + Blender 5.2 内置标准库
 - [ ] 无 `pip install` 出现在交付流程
 - [ ] 所有 Blender 调用带 `--background --factory-startup --python ... --`
-- [ ] 系统 Python 3.14 只出现在「开发机辅助」描述里
+- [ ] 系统 Python 3.14 只出现在「开发机辅助 / 测试辅助」描述里（`fake_blender.py` / `scripts/verify.py` 为 dev/test-only，不进交付）

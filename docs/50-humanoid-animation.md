@@ -10,8 +10,10 @@
 | **A. Tripo 自动绑定** | 在 https://studio.tripo3d.com/ 生成人形后使用**自动绑定（auto-rig）与动画**，导出带骨骼模型 | 快，适合起步 / 原型 | 骨骼命名可能与 Unity Humanoid 不完全一致，需重定向或改名 |
 | **B. Blender 手动绑定** | 导出静态 GLB → 在 Blender 5.2 里绑定 → 按 Unity Humanoid 命名骨骼（脚本 `scripts/blender/humanoid_rig.py`） | 骨骼结构精确可控，Avatar 映射稳 | 需要人工/脚本投入 |
 
+> v2 起 `tripo` 是**默认生产供应商**，因此路线 A（Tripo 自动绑定）与默认建模来源一致；`blender` 参数化建模为可选策略，对应路线 B 的手动绑定。
+
 选择建议：
-- 要快速出可动原型 → 路线 A，再用 `rig_check.py` 暴露命名差异并重定向。
+- 要快速出可动原型 → 路线 A（默认供应商），再用 `rig_check.py` 暴露命名差异并重定向。
 - 要正式入库、多人共用 Avatar / 动画重定向 → 路线 B，骨骼一次对齐，后续所有 clip 复用。
 
 > 两条路线都最终落到同一套骨骼命名（§2）与同一套 clip 清单（§4）。自动绑定能力本身在 https://studio.tripo3d.com/ 内完成；本仓库不内嵌第三方绑定器。

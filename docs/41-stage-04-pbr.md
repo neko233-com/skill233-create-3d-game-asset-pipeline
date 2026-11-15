@@ -14,7 +14,7 @@
 | 退出码 | `0` 成功；非 `0` 失败，错误写 stderr |
 | 运行 | `blender --background --factory-startup --python scripts/blender/stage_04_pbr.py -- --asset <id> --config <asset.json> --in ... --out ...` |
 
-阶段 5 导出时，`path_mode = "COPY"` 会把这些贴图随 FBX 一并复制到 `build/<id>/`，与 `<id>.fbx` 同目录交付 Unity。
+阶段 5 导出时，`path_mode = "COPY"` 会把这些贴图随 FBX 一并复制到 `build/<id>/`，与 `<id>.fbx` 同目录交付 Unity。`assetctl run` 在真实 Blender 阶段结束后会校验本阶段 `--out` 文件确实存在（静默失败防护）；CI / `go test ./...` 则由 `ScriptLauncher` 运行 `testing/fake_blender.py` 模拟端到端，无需安装 Blender 5.2。
 
 ## 2. 五张 PBR 贴图
 

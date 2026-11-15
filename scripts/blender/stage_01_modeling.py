@@ -1,11 +1,14 @@
 """Stage 1 · modeling (SPEC.md §3/§4/§5).
 
 Strategy-dependent entry point:
-  - strategy=blender (default): --in is EMPTY -> procedural blockout from
-    asset.json.modeling (primitive / size / subdivisions).
-  - strategy=tripo: --in is raw/<id>.glb downloaded from
-    https://studio.tripo3d.com/ (image-to-3D), imported as-is.
-  - strategy=import: --in is a copied raw/<id>.{glb,fbx,obj,...}.
+  - strategy=tripo (DEFAULT production supplier): --in is raw/<id>.glb
+    downloaded from https://studio.tripo3d.com/ (image-to-3D), imported as-is.
+  - strategy=blender (alternative / CI baseline): --in is EMPTY -> procedural
+    blockout from asset.json.modeling (primitive / size / subdivisions).
+  - strategy=import (alternative): --in is a copied raw/<id>.{glb,fbx,obj,...}.
+
+If an imported file yields no mesh (empty GLB / upstream glitch), a procedural
+blockout is generated so downstream stages never operate on an empty scene.
 
 Output: work/<id>/01-modeling.blend (also saved to --blend-out).
 Runs inside Blender 5.2 native Python (bpy + stdlib only), headless and
@@ -75,7 +78,11 @@ def main():
     open_input(a.inp)  # clears scene / imports raw file, or opens a .blend
 
     meshes = all_meshes()
-    if not a.inp:
+    if not a.inp or not meshes:
+        # Empty --in = procedural `blender` strategy; imported-but-empty = a
+        # Tripo/import drop without geometry. Both must yield a mesh.
+        if a.inp and not meshes:
+            warn("imported %s produced no mesh; falling back to procedural blockout" % a.inp)
         meshes = [build_procedural(cfg, a.asset)]
 
     # Humanoid assets need a Unity-Humanoid skeleton from day one so the

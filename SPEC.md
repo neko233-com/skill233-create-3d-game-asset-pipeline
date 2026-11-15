@@ -1,7 +1,9 @@
-# SPEC.md — 流水线规范（唯一契约）
+# SPEC.md — 流水线规范（唯一契约 · v2 / production-grade）
 
 本文件是本仓库的**规范性契约**。所有文档、Go 编排器、Blender 脚本必须与之一致；冲突时以本文件为准。
 版本 / URL 的硬性约束另见 [AGENTS.md](AGENTS.md)。
+
+> **v2 changelog（相对 v1）**：`tripo` 升级为**默认生产供应商（DEFAULT Supplier）**，取代原先默认的 `blender` 参数化策略；新增供应商交付机制 `handoff`（`manual | file | fixture`）与环境变量覆盖，让「人在回路」的默认供应商可脚本化、可测试；新增 `internal/runner` 的 `Launcher` 抽象与 `testing/fake_blender.py` 全链路无 Blender 自测；新增 `assetctl doctor` 与 `assetctl validate` 的 `manifest.json` 全 `ok` DoD 门禁；`assetctl init` 新增 `--handoff` / `--source` / `--supplier` 标志。§1/§2 硬约束、六阶段、FBX 七参数、ACT 映射、命名与许可保持不变。
 
 ## 1. 目标
 
@@ -12,20 +14,24 @@
 - **我们自己写的代码 = Go 1.27**：CLI、编排器、策略注册表、配置、校验、参考图处理，全部 Go 1.27，且**零第三方依赖**（仅标准库）。
 - **Blender 内部代码 = Blender 5.2 内置 Python（`bpy`）**：通过 `blender --background --factory-startup --python <script> -- ...` 运行。Blender 原生自带什么 Python 就用什么，不假设系统 Python，也不在 Blender 里 `pip install`。（用户原话：「他原生代码用什么就用什么」）
 - **Blender 版本 = 5.2**；**Tripo 入口 = https://studio.tripo3d.com/**。
-- **参考插件 ACT**：https://github.com/mrven/Blender-Asset-Creation-Toolset （GPL-3.0）。只对齐其行为与参数，**不复制 / 不 vendoring 其源码**，避免 GPL 污染本仓库 MIT 许可。
-- 系统 Python 3.14 只用于开发机上的辅助检查，不进入交付流水线。
+- **参考插件 ACT**：https://github.com/mrven/Blender-Asset-Creation-Toolset （GPL-3.0，默认分支 `master`，release 2025.2）。只对齐其行为与参数，**不复制 / 不 vendoring 其源码**，避免 GPL 污染本仓库 MIT 许可。
+- 系统 Python 3.14 只用于开发机上的辅助检查（`py_compile` / 测试），不进入交付流水线。
 
-## 3. 多策略（Strategy）
+## 3. 多策略（Strategy）与默认供应商（Supplier）
 
-「建模」阶段是**可替换策略**，其余阶段共享。Tripo 是策略之一，**Blender 是默认策略**。
+「建模」阶段是**可替换策略**，其余阶段共享。
 
-| id | 名称 | 阶段 1 实现 | 自动化程度 |
-|----|------|-------------|-----------|
-| `blender` | 参数化建模（**默认**） | `scripts/blender/stage_01_modeling.py` | 全自动 |
-| `tripo` | 浏览器图生 3D | 人工在 https://studio.tripo3d.com/ 上传 → 下载 GLB 到 `raw/<id>.glb` | 半自动（Go 检测文件、给出指引、可断点续跑） |
-| `import` | 导入已有模型 | 复制 `config.source` 到 `raw/<id>.<ext>` | 全自动 |
+> **术语等价（仅此一次说明）**：本规范里「**供应商（Supplier）**」与「**建模策略（Strategy）**」指的是同一件事——阶段 1 由谁来产出原始网格。为兼容既有代码与配置，Go 类型仍叫 `Strategy`，`asset.json` 字段仍叫 `strategy`，不做重命名；文档里可自由使用「供应商」这一生产语义。
 
-扩展方式：实现 `internal/strategy/strategy.go` 的 `Strategy` 接口并 `Register()`。典型可扩展项：`scenario` / `meshy` / `rodin` / 摄影测量。
+**`tripo` 是默认生产供应商**（`IsDefault() == true`，`config.Default().Strategy == "tripo"`，`assetctl init` 默认 `--strategy tripo`）。Tripo 为浏览器端半自动、人在回路的图生 3D / 文生 3D / 自动绑定服务，入口固定 **https://studio.tripo3d.com/**。`blender`（参数化 blockout）与 `import`（复制已有文件）是**一等公民的可选策略**，registry 是未来接入其它供应商（`meshy` / `rodin` / `scenario` / 摄影测量）的扩展点。
+
+| id | 名称 | 角色 | 阶段 1 实现 | 自动化程度 | `IsDefault()` |
+|----|------|------|-------------|-----------|---------------|
+| `tripo` | 浏览器图生 3D（**默认供应商**） | **DEFAULT** | 人工在 https://studio.tripo3d.com/ 上传 → 下载 GLB 到 `raw/<id>.glb`；或经 `handoff` 脚本化交付 | 半自动（人在回路）+ 可脚本化 handoff | `true` |
+| `blender` | 参数化 blockout | 可选策略 / CI 基线 | `scripts/blender/stage_01_modeling.py` | 全自动 | `false` |
+| `import` | 导入已有模型 | 可选策略 | 复制 `config.source` 到 `raw/<id>.<ext>` | 全自动 | `false` |
+
+扩展方式：实现 `internal/strategy/strategy.go` 的 `Strategy` 接口并 `Register()`。所有新供应商必须返回 `IsDefault() == false`（默认唯一，归 `tripo`）；产物统一落到 `raw/<id>.<ext>`。
 
 ```go
 type Strategy interface {
@@ -38,11 +44,54 @@ type Strategy interface {
 
 所有策略的产物统一落到 `raw/<id>.glb`（或 `.fbx` / `.obj`），随后进入**同一条**共享流水线。
 
+## 3A. 供应商交付（Handoff）、可测试性与 DoD 门禁（v2 新增章节）
+
+### 3A.1 Handoff 机制（让默认供应商可脚本化、可测试）
+
+因为默认供应商 `tripo` 是人在回路的，生产环境需要定义良好的**交付（handoff）**机制，使整条流水线可自动化、可回归。`asset.json` 新增 `handoff` 对象：
+
+```json
+"handoff": { "mode": "manual", "source": "" }
+```
+
+| mode | 语义 | 典型场景 |
+|------|------|----------|
+| `manual`（默认） | 人工在 https://studio.tripo3d.com/ 上传参考图、下载 GLB 到 `raw/<id>.glb`，再 `assetctl run <id> --from modeling` 续跑。缺文件时打印操作指引并退出码 `3`（`ErrManualStepRequired`） | 正式生产 |
+| `file` | 把 `handoff.source`（或环境变量 `ASSETCTL_TRIPO_SOURCE`）复制到 `raw/<id>.<ext>` | 上游 job / webhook 落下 Tripo 导出；`assetctl init <id> --handoff file --source <path>` |
+| `fixture` | 生成一个确定性的、最小的合法 GLB（`raw/<id>.glb`） | CI / 测试的逃生舱，使**默认供应商也能完全无人值守**；环境变量 `ASSETCTL_TRIPO_HANDOFF=fixture` 亦可强制 |
+
+环境变量覆盖：`ASSETCTL_TRIPO_HANDOFF`（覆盖 mode）、`ASSETCTL_TRIPO_SOURCE`（覆盖 source 路径）。
+
+`Acquire` 优先级：**(1)** 已存在的 `raw/<id>.{glb,gltf,fbx,obj}` 优先胜出；**(2)** 否则按 handoff mode 处理（含 env 覆盖）；**(3)** 否则给出 manual 指引。
+
+`--from` / `--only` 断点续跑保持不变，尤其 **`--from topology-uv`**（人工/上游补齐 GLB 后跳过 modeling 直接跑下游），是半自动与 handoff 场景的必需能力。
+
+### 3A.2 Launcher 抽象与端到端可测试性
+
+`internal/runner` 引入 `Launcher` 抽象，将「如何拉起一个阶段」与编排逻辑解耦：
+
+| 实现 | 用途 | 运行时 |
+|------|------|--------|
+| `CommandLauncher` | 生产 | 真实 **Blender 5.2**（`blender --background --factory-startup --python <script> -- ...`，使用 Blender 自带 `bpy`） |
+| `ScriptLauncher` | CI / 测试 | 运行 `testing/fake_blender.py`——纯标准库实现的 `bpy` + `mathutils` 模拟器 |
+
+`testing/fake_blender.py` 通过写入 `.blend` / `.fbx` 文件的 JSON 快照在**多个阶段进程之间持久化场景状态**，并用标准库 `zlib` / `struct` 写出**真实 PNG**。因此 `go test ./...` 即可端到端跑完六阶段，**无需安装 Blender 5.2**；`go test ./...` 本身就是完整的自动化验证。
+
+防静默失败：`CommandLauncher` 在每个真实阶段执行后，校验该阶段声明的 `--out` 文件确实存在，缺失即判失败。
+
+### 3A.3 DoD / manifest 门禁与 `doctor`
+
+- `assetctl run` 写 `build/<id>/manifest.json`（阶段状态 + DoD 结果）。
+- `assetctl validate` 除既有检查外，额外校验 `build/<id>/manifest.json`：**六阶段必须全部为 `ok`**（DoD 门禁）。
+- 新增 `assetctl doctor`：打印工具链报告——Go 版本、Blender 5.2 是否存在 / `ASSETCTL_BLENDER`、已注册供应商 + DEFAULT、Tripo URL、坐标轴契约、`scripts/blender` 阶段脚本是否齐全、退出码。用于生产环境 onboarding 自检。
+
+一键验证脚本 `scripts/verify.py`：`go build`、`go vet`、unix 上 `go test -race -cover` / Windows 上普通 `go test`、`py_compile` 所有 `scripts/blender/*.py`、`python -m unittest discover -s testing`；`Makefile` 的 `verify` target 调用它；`.github/workflows/ci.yml` 为 3-OS 矩阵（ubuntu / macos / windows）+ Go 1.27 + setup-python。**再次强调：`go test ./...` 本身即完整验证，不需要 Blender。**
+
 ## 4. 游戏美术全流程（六阶段，顺序固定）
 
 | # | 阶段 id | 名称 | 实现 |
 |---|---------|------|------|
-| 1 | `modeling` | 建模 | 由所选 **Strategy** 提供 |
+| 1 | `modeling` | 建模 | 由所选 **Strategy / Supplier** 提供 |
 | 2 | `topology-uv` | 拓扑 / UV | `scripts/blender/stage_02_topology_uv.py` |
 | 3 | `bake` | 烘焙 | `scripts/blender/stage_03_bake.py` |
 | 4 | `pbr` | PBR 材质 | `scripts/blender/stage_04_pbr.py` |
@@ -59,7 +108,7 @@ Go runner 为每个阶段统一传递：
 --asset <id> --config <asset.json 路径> --in <上一阶段产物> --out <本阶段产物> [--blend-out <中间 .blend>]
 ```
 
-退出码：`0` 成功；非 `0` 失败，错误写 stderr。所有脚本必须容忍 `--factory-startup`（不依赖用户偏好）。
+退出码：`0` 成功；非 `0` 失败，错误写 stderr。所有脚本必须容忍 `--factory-startup`（不依赖用户偏好）。生产 `CommandLauncher` 在每个阶段后校验 `--out` 文件真实存在（见 §3A.2）。
 
 | 阶段 | `--in` | `--out` |
 |------|--------|---------|
@@ -80,8 +129,8 @@ raw/<id>.*                      策略产物（原始，保留，便于回溯）
 work/<id>/NN-<stage>.blend      阶段中间 .blend
 build/<id>/<id>.fbx             最终 Unity 资产
 build/<id>/<id>_basecolor.png   PBR 贴图（normal/roughness/metallic/ao 同理）
-build/<id>/preview.png          阶段 6 渲染合成图
-build/<id>/manifest.json        阶段状态 + DoD 结果
+build/<id>/preview.png          阶段 6 渲染合成图（QA 产物，豁免 PBR 后缀检查）
+build/<id>/manifest.json        阶段状态 + DoD 结果（六阶段全 ok 才算完成）
 ```
 
 ## 7. `asset.json` 字段
@@ -89,7 +138,7 @@ build/<id>/manifest.json        阶段状态 + DoD 结果
 ```json
 {
   "id": "hero-knight",
-  "strategy": "blender",
+  "strategy": "tripo",
   "kind": "character",
   "humanoid": true,
   "referenceImage": "raw/hero-knight.png",
@@ -102,25 +151,32 @@ build/<id>/manifest.json        阶段状态 + DoD 结果
   "textures": ["basecolor", "normal", "roughness", "metallic"],
   "animations": ["idle", "walk", "attack"],
   "modeling": { "primitive": "cube", "size": 1.0, "subdivisions": 2 },
-  "stages": ["modeling", "topology-uv", "bake", "pbr", "unity-export", "render"]
+  "stages": ["modeling", "topology-uv", "bake", "pbr", "unity-export", "render"],
+  "handoff": { "mode": "manual", "source": "" }
 }
 ```
+
+> `strategy` 默认 `tripo`；`handoff` 为 v2 新增对象，字段语义见 §3A.1。
 
 ## 8. CLI（`assetctl`，Go 1.27）
 
 ```
 assetctl version
-assetctl strategies                          # 列出策略，标注 DEFAULT
+assetctl strategies                          # 列出策略/供应商，标注 DEFAULT（tripo）
 assetctl stages                              # 列出六阶段
-assetctl init <asset-id> [--strategy blender] [--kind character] [--humanoid]
+assetctl init <asset-id> [--strategy tripo] [--supplier <id>] [--handoff <manual|file|fixture>] [--source <path>] [--kind character] [--humanoid]
 assetctl run <asset-id> [--strategy <id>] [--from <stage>] [--only <stage,...>] [--dry-run]
 assetctl reference prepare <in.png> <outdir> [--size 1024] [--bg 808080]
 assetctl validate <build-dir> [--expect-humanoid] [--expect-textures]
 assetctl blender <script> [-- --args...]     # 透传 Blender 5.2
+assetctl doctor                              # 工具链报告（v2 新增）
 ```
 
-`assetctl run` 依次执行六阶段，写 `build/<id>/manifest.json`；任一阶段失败即停止并记录状态。
-`--from` / `--only` 支持断点续跑（Tripo 半自动场景必需）。
+- `assetctl init` 默认 `--strategy tripo`；`--supplier` 是 `--strategy` 的别名；`--handoff` / `--source` 写入 `asset.json.handoff`（见 §3A.1）。
+- `assetctl run` 依次执行六阶段，写 `build/<id>/manifest.json`；任一阶段失败即停止并记录状态。
+- `--from` / `--only` 支持断点续跑（Tripo 半自动 / handoff 场景必需，尤其 `--from topology-uv`）。
+- `assetctl run` 受 `ASSETCTL_TRIPO_HANDOFF` / `ASSETCTL_TRIPO_SOURCE` 环境变量覆盖；`assetctl doctor` 读取 `ASSETCTL_BLENDER` 定位 Blender 5.2。
+- `assetctl validate` 增加 `build/<id>/manifest.json` 六阶段全 `ok` 的 DoD 门禁。
 
 ## 9. 坐标与导出参数（对齐 Unity）
 
@@ -150,16 +206,16 @@ Unity Import Settings 勾选 **Bake Axis Conversion**（对齐 ACT 的 `"Unity"`
 | Cleanup Empties / Negative Scale / Duplicated Materials | 阶段 1/2 清理 |
 | Low-Poly Art workflow | 阶段 2 面数预算 + 阶段 4 Palette 材质 |
 
-安装方式：Blender Extensions（4.2+）或 https://github.com/mrven/Blender-Asset-Creation-Toolset/raw/master/release/act_2025_2_1.zip 。
+安装方式：Blender Extensions（4.2+，见 https://extensions.blender.org/add-ons/act-game-asset-creation-toolset/ ）或 https://github.com/mrven/Blender-Asset-Creation-Toolset/raw/master/release/act_2025_2_1.zip 。
 ACT 2025.2 支持 Blender 3.0–5.0+，可与本机 **Blender 5.2** 并存；其 "Scale for models in Unity is 1" 与本仓库 `scale: 1.0` 一致。
 
 ## 11. 命名与 DoD
 
 - 资产 ID：小写连字符 `hero-knight`；clip：`hero-knight-idle`。
-- 贴图后缀：`_basecolor` / `_normal` / `_roughness` / `_metallic` / `_ao`。
-- Humanoid 骨骼：`Hips` / `Spine` / `Chest` / `Neck` / `Head` / `Left|Right...`，左右用 `Left`/`Right` 前缀。
-- DoD：`assetctl validate` 通过 + Unity 中无粉材质、无 T-pose、Avatar 映射无红项。
+- 贴图后缀：`_basecolor` / `_normal` / `_roughness` / `_metallic` / `_ao`；`preview.png` 为 QA 产物，豁免 PBR 后缀检查。
+- Humanoid 骨骼（21 根）：`Hips` / `Spine` / `Chest` / `Neck` / `Head` / `Left…` / `Right…`，左右用 `Left`/`Right` 前缀；阶段 5 后 `rig_check.py` 门禁；clip `<id>-idle`。
+- DoD：`assetctl validate` 通过（含 `manifest.json` 六阶段全 `ok`）+ `assetctl doctor` 通过 + Unity 中无粉材质、无 T-pose、Avatar 映射无红项。
 
 ## 12. 许可证
 
-本仓库 **MIT**。ACT 为 **GPL-3.0**，仅作为可选外部插件在文档中引用，不纳入本仓库代码。
+本仓库 **MIT**（仓库地址 https://github.com/neko233-com/skill233-create-3d-game-asset-pipeline ）。ACT 为 **GPL-3.0**，仅作为可选外部插件在文档中引用，不纳入本仓库代码。提交遵循 **Conventional Commits**，仅在 **`main`** 分支开发。

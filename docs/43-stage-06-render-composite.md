@@ -5,7 +5,7 @@
 
 ## 1. 阶段职责
 
-用 Blender 5.2 给最终交付的 FBX 拍一张**标准化预览图**，供 QA、缩略图、商店图使用。这是六阶段的最后一环，也是 `assetctl validate` 之前最直观的人工验收物。
+用 Blender 5.2 给最终交付的 FBX 拍一张**标准化预览图**，供 QA、缩略图、商店图使用。这是六阶段的最后一环，也是 `assetctl validate` 之前最直观的人工验收物。`preview.png` 是 QA 产物，豁免 PBR 贴图后缀检查（SPEC.md §11）；CI 中 `ScriptLauncher` 用 `testing/fake_blender.py` 写出真实 PNG，使 `go test ./...` 无需安装 Blender 5.2 即可跑通全六阶段。
 
 | 项 | 值 |
 |----|----|

@@ -81,12 +81,13 @@ ACT 提供两个导出档：**"Unity"** 与 **"Unity (Pre-Rotated)"**。本仓�
 
 Go 1.27 runner 在阶段 5 做「同步」：把 Blender 导出的 `<id>.fbx` 与 PBR 贴图放置/更新到 `build/<id>/`，并写 **`build/<id>/manifest.json`** 记录各阶段状态与 DoD 结果。
 
-`assetctl run` 依次执行六阶段、写 `manifest.json`；任一阶段失败即停止并记录状态，便于 `--from` 断点续跑（[80](80-cli-reference.md)）。`manifest.json` 结构示例：
+`assetctl run` 依次执行六阶段、写 `manifest.json`；任一阶段失败即停止并记录状态，便于 `--from` 断点续跑（尤其 `--from topology-uv`，[80](80-cli-reference.md)）。**每个真实阶段执行后，runner 还会校验该阶段声明的 `--out` 文件确实存在**（防静默失败：脚本退出 `0` 但没写出产物会被拦下）。`assetctl validate` 额外要求 `manifest.json` 六阶段全 `ok`（DoD 门禁）。`manifest.json` 结构示例：
 
 ```json
 {
   "asset": "hero-knight",
-  "strategy": "blender",
+  "strategy": "tripo",
+  "handoff": { "mode": "fixture", "source": "" },
   "humanoid": true,
   "stages": {
     "modeling":      { "status": "ok", "out": "work/hero-knight/01-modeling.blend" },

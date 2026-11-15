@@ -6,15 +6,17 @@ import (
 	"github.com/neko233-com/skill233-create-3d-game-asset-pipeline/internal/config"
 )
 
-// BlenderStrategy is the DEFAULT: procedural modeling inside Blender 5.2 using
-// its native Python (bpy). No external service, fully automatic.
+// BlenderStrategy is an ALTERNATIVE supplier: procedural modeling inside
+// Blender 5.2 using its native Python (bpy). No external service, fully
+// automatic — ideal for CI blockouts and pipeline self-tests. It is NOT the
+// production default (Tripo is; see SPEC.md §3).
 type BlenderStrategy struct{}
 
 func init() { Register(BlenderStrategy{}) }
 
 func (BlenderStrategy) ID() string          { return "blender" }
-func (BlenderStrategy) Description() string { return "参数化建模（默认）· Blender 5.2 bpy · 全自动" }
-func (BlenderStrategy) IsDefault() bool     { return true }
+func (BlenderStrategy) Description() string { return "参数化建模（可选策略 / CI baseline）· Blender 5.2 bpy · 全自动" }
+func (BlenderStrategy) IsDefault() bool     { return false }
 
 func (BlenderStrategy) Acquire(ctx *RunContext) (*AcquireResult, error) {
 	c := ctx.Config

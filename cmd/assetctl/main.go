@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/neko233-com/skill233-create-3d-game-asset-pipeline/internal/config"
@@ -18,7 +19,7 @@ import (
 	"github.com/neko233-com/skill233-create-3d-game-asset-pipeline/internal/validate"
 )
 
-const version = "assetctl 1.0.0 (go1.27, blender5.2, tripo=https://studio.tripo3d.com/)"
+const version = "assetctl 2.0.0 (go1.27, blender5.2, tripo=https://studio.tripo3d.com/, default-supplier=tripo)"
 
 // reorderFlags moves leading flag tokens (and their values) ahead of the
 // positional arguments so Go's flag.FlagSet can parse them regardless of
@@ -68,7 +69,8 @@ func reorderFlags(args []string) []string {
 
 func flagTakesValue(name string) bool {
 	switch name {
-	case "-strategy", "-kind", "-root", "-from", "-only", "-blender", "-size", "-bg":
+	case "-strategy", "-supplier", "-kind", "-root", "-from", "-only",
+		"-blender", "-size", "-bg", "-handoff", "-source":
 		return true
 	}
 	return false
@@ -113,6 +115,8 @@ func dispatch(args []string) error {
 		return cmdReference(args[1:])
 	case "validate":
 		return cmdValidate(args[1:])
+	case "doctor":
+		return cmdDoctor(args[1:])
 	case "blender":
 		return cmdBlender(args[1:])
 	default:
@@ -124,7 +128,8 @@ func usage() {
 	fmt.Printf(`%s
 
 游戏美术管线向：建模 → 拓扑/UV → 烘焙 → PBR 材质 → Unity 导出/同步 → 渲染合成
-多策略：blender(默认) / tripo / import | 语言：Go 1.27 + Blender 5.2 原生 bpy
+默认生产供应商：tripo (DEFAULT) / blender / import | 语言：Go 1.27 + Blender 5.2 原生 bpy
+Tripo handoff：manual | file | fixture（默认供应商也可脚本化 / CI 无人值守）
 
 Commands:
   version                       打印版本与工具链
@@ -133,7 +138,8 @@ Commands:
   init <asset-id>               创建 assets/<id>/asset.json
   run <asset-id>                执行流水线
   reference prepare <in> <out>  归一化参考图（纯 Go，无第三方依赖）
-  validate <build-dir>          交付前校验 (DoD)
+  validate <build-dir>          交付前校验 (DoD，含 manifest 六阶段全 ok)
+  doctor                        工具链 / 供应商 / 脚本齐备性报告
   blender <script> [-- args...] 透传 Blender 5.2
 
 Run: assetctl <command> -h  for command flags.
@@ -151,7 +157,7 @@ func cmdStrategies(args []string) error {
 		}
 		fmt.Printf("%-10s %-9s %s\n", s.ID(), def, s.Description())
 	}
-	fmt.Printf("\n切换策略：assetctl init <id> --strategy tripo 或 assetctl run <id> --strategy tripo\n")
+	fmt.Printf("\n切换供应商：assetctl init <id> --strategy blender | --supplier tripo\n")
 	fmt.Printf("Tripo 入口：%s\n", config.TripoURL)
 	return nil
 }
@@ -165,21 +171,31 @@ func cmdStages() error {
 
 func cmdInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
-	st := fs.String("strategy", "blender", "modeling strategy: blender|tripo|import")
+	st := fs.String("strategy", config.DefaultSupplier, "modeling supplier: tripo|blender|import")
+	supplier := fs.String("supplier", "", "alias for --strategy (overrides it)")
 	kind := fs.String("kind", "prop", "asset kind: prop|character")
 	humanoid := fs.Bool("humanoid", false, "humanoid rig + animation")
+	handoff := fs.String("handoff", "manual", "tripo handoff mode: manual|file|fixture")
+	source := fs.String("source", "", "handoff file source (also used by import strategy)")
 	root := fs.String("root", ".", "repo root")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return errors.New("usage: assetctl init <asset-id> [--strategy blender] [--kind character] [--humanoid]")
+		return errors.New("usage: assetctl init <asset-id> [--strategy tripo] [--supplier <id>] [--handoff manual|file|fixture] [--source <path>] [--kind character] [--humanoid]")
 	}
 	id := fs.Arg(0)
 	c := config.Default(id)
 	c.Strategy = *st
+	if *supplier != "" {
+		c.Strategy = *supplier
+	}
 	c.Kind = *kind
 	c.Humanoid = *humanoid
+	c.Handoff = config.Handoff{Mode: *handoff, Source: *source}
+	if *source != "" {
+		c.Source = *source
+	}
 	if *humanoid {
 		c.Animations = []string{"idle", "walk", "attack"}
 	}
@@ -190,9 +206,17 @@ func cmdInit(args []string) error {
 	if err := c.Save(path); err != nil {
 		return err
 	}
-	fmt.Printf("[init] created %s (strategy=%s, default=%s)\n", path, c.Strategy, strategy.DefaultID())
+	fmt.Printf("[init] created %s (strategy=%s, default=%s, handoff=%s)\n",
+		path, c.Strategy, strategy.DefaultID(), c.Handoff.Mode)
 	if c.Strategy == "tripo" {
-		fmt.Printf("[init] Tripo 人工步骤见 %s ，下载 GLB 到 raw/%s.glb\n", config.TripoURL, id)
+		switch c.Handoff.Mode {
+		case "manual":
+			fmt.Printf("[init] Tripo 人工步骤见 %s ，下载 GLB 到 raw/%s.glb\n", config.TripoURL, id)
+		case "file":
+			fmt.Printf("[init] Tripo file handoff：把 %s 放到 raw/%s.glb（或运行前设 ASSETCTL_TRIPO_SOURCE）\n", c.Handoff.Source, id)
+		case "fixture":
+			fmt.Printf("[init] Tripo fixture handoff：CI 无人值守，自动生成确定性最小 GLB\n")
+		}
 	}
 	return nil
 }
@@ -285,15 +309,17 @@ func cmdValidate(args []string) error {
 	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
 	humanoid := fs.Bool("expect-humanoid", false, "require humanoid rig marker")
 	textures := fs.Bool("expect-textures", false, "require PBR textures")
+	manifest := fs.Bool("expect-manifest", true, "require manifest.json with six ok stages (DoD)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return errors.New("usage: assetctl validate <build-dir> [--expect-humanoid] [--expect-textures]")
+		return errors.New("usage: assetctl validate <build-dir> [--expect-humanoid] [--expect-textures] [--expect-manifest=true|false]")
 	}
 	r, err := validate.Validate(fs.Arg(0), validate.Options{
 		ExpectHumanoid: *humanoid,
 		ExpectTextures: *textures,
+		ExpectManifest: *manifest,
 	})
 	if err != nil {
 		return err
@@ -307,6 +333,60 @@ func cmdValidate(args []string) error {
 	}
 	fmt.Printf("[validate] OK: %s (%d model(s), %d texture(s))\n",
 		filepath.Base(filepath.Clean(r.Dir)), len(r.Models), len(r.Textures))
+	return nil
+}
+
+// cmdDoctor reports the toolchain / supplier / repo-layout state (SPEC.md §3A.3).
+// A missing Blender 5.2 is a WARN (not fatal): CI runs with ScriptLauncher.
+// Only genuine repo defects (missing stage scripts) make doctor exit non-zero.
+func cmdDoctor(args []string) error {
+	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
+	root := fs.String("root", ".", "repo root")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	fmt.Println("[doctor] assetctl toolchain report")
+	fmt.Printf("  Go version        : %s (target %s)\n", runtime.Version(), config.DefaultGo)
+	fmt.Printf("  Blender version   : %s (required)\n", config.BlenderVersion)
+	exe, err := runner.FindBlender("")
+	if err != nil {
+		fmt.Printf("  Blender executable: WARN not found (%v)\n", err)
+		fmt.Println("                       production `assetctl run` needs Blender 5.2;")
+		fmt.Println("                       `go test ./...` / CI use ScriptLauncher (fake_blender.py).")
+	} else {
+		fmt.Printf("  Blender executable: OK %s\n", exe)
+	}
+	if env := os.Getenv("ASSETCTL_BLENDER"); env != "" {
+		fmt.Printf("  ASSETCTL_BLENDER  : %s\n", env)
+	}
+	fmt.Printf("  Suppliers         : %s (DEFAULT=%s)\n", strings.Join(strategy.IDs(), ", "), strategy.DefaultID())
+	fmt.Printf("  Tripo URL         : %s\n", config.TripoURL)
+	fmt.Printf("  Unity axes        : forward=-Z up=Y scale=1.0 (Bake Axis Conversion)\n")
+	if h := os.Getenv("ASSETCTL_TRIPO_HANDOFF"); h != "" {
+		fmt.Printf("  ASSETCTL_TRIPO_HANDOFF: %s\n", h)
+	}
+	if s := os.Getenv("ASSETCTL_TRIPO_SOURCE"); s != "" {
+		fmt.Printf("  ASSETCTL_TRIPO_SOURCE : %s\n", s)
+	}
+
+	scripts := filepath.Join(*root, "scripts", "blender")
+	want := []string{
+		"common.py", "stage_01_modeling.py", "stage_02_topology_uv.py",
+		"stage_03_bake.py", "stage_04_pbr.py", "stage_05_unity_export.py",
+		"stage_06_render.py", "rig_check.py", "humanoid_rig.py", "tripo_to_unity.py",
+	}
+	missing := []string{}
+	for _, name := range want {
+		if _, err := os.Stat(filepath.Join(scripts, name)); err != nil {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		fmt.Printf("  Stage scripts     : FAIL missing %s\n", strings.Join(missing, ", "))
+		return fmt.Errorf("doctor: missing %d scripts/blender file(s)", len(missing))
+	}
+	fmt.Printf("  Stage scripts     : OK (%d files in %s)\n", len(want), scripts)
+	fmt.Println("[doctor] OK (no fatal repo defects)")
 	return nil
 }
 

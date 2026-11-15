@@ -16,7 +16,7 @@
 | **Go** | **1.27** | 我们自己写的代码：CLI `assetctl`、编排器、策略注册表、配置、校验、参考图处理；**零第三方依赖，仅标准库** |
 | **Blender** | **5.2**（本机安装版本） | 六阶段里全部 `bpy` 脚本的运行时；无头调用 `blender --background --factory-startup --python <script> -- ...` |
 | Blender 内置 Python | 随 Blender 5.2 自带（原生 `bpy`） | 不假设系统 Python、不在 Blender 里 `pip install`，「他原生代码用什么就用什么」 |
-| **Tripo** | **https://studio.tripo3d.com/** | 浏览器端图生 3D / 文生 3D / 自动绑定与动画；是建模阶段的可选策略之一 |
+| **Tripo** | **https://studio.tripo3d.com/** | 浏览器端图生 3D / 文生 3D / 自动绑定与动画；**默认生产供应商（DEFAULT Supplier）**，半自动、人在回路 |
 | 系统 Python | **3.14**（本机 3.14.3） | 仅开发机上的辅助检查，**不进入交付流水线** |
 | Unity | URP 优先（`unity-urp`） | 最终导入、Import Settings、Prefab / Animator |
 | ACT（参考插件） | ACT 2025.2，GPL-3.0 | 外部可选插件，只对齐行为与参数、不 vendoring 源码；详见 [60-act-integration.md](60-act-integration.md) |
@@ -25,13 +25,15 @@
 
 ## 3. 多策略概念（建模阶段可替换）
 
-「建模」阶段是**可替换策略**，其余五个阶段共享同一条流水线。Tripo 只是策略之一，**Blender 是默认策略**。
+「建模」阶段是**可替换策略**，其余五个阶段共享同一条流水线。**`tripo` 是默认生产供应商（DEFAULT Supplier）**（`IsDefault() == true`、`config.Default().Strategy == "tripo"`、`assetctl init` 默认 `--strategy tripo`，半自动、人在回路）；**供应商（Supplier）== 建模策略（Strategy）**，Go `Strategy` 类型保持原名。`blender`（参数化 blockout）与 `import`（复制已有文件）仍是一等公民的可选策略，registry 是 `meshy` / `rodin` / `scenario` / 摄影测量等未来供应商的扩展点。
+
+默认供应商通过 `asset.json.handoff` 的 `manual | file | fixture` 三种交付模式（及 `ASSETCTL_TRIPO_HANDOFF` / `ASSETCTL_TRIPO_SOURCE` 环境变量）实现脚本化与无人值守：`manual` 人工下载 GLB（缺文件 exit `3` / `ErrManualStepRequired`）、`file` 复制上游导出、`fixture` 生成确定性最小合法 GLB（CI 逃生舱）。详见 [10-strategies.md](10-strategies.md)。
 
 | id | 名称 | 阶段 1 实现 | 自动化程度 |
 |----|------|-------------|-----------|
-| `blender` | 参数化建模（**默认**） | `scripts/blender/stage_01_modeling.py` | 全自动 |
-| `tripo` | 浏览器图生 3D | 人工在 https://studio.tripo3d.com/ 上传 → 下载 GLB 到 `raw/<id>.glb` | 半自动（Go 检测文件、给指引、可断点续跑） |
-| `import` | 导入已有模型 | 复制 `config.source` 到 `raw/<id>.<ext>` | 全自动 |
+| `tripo` | 浏览器图生 3D（**默认供应商 / DEFAULT**） | 人工在 https://studio.tripo3d.com/ 上传 → 下载 GLB 到 `raw/<id>.glb`；或经 `handoff` 三模式交付 | 半自动（人在回路，经 handoff 可脚本化 / `fixture` 无人值守） |
+| `blender` | 参数化建模（可选策略） | `scripts/blender/stage_01_modeling.py` | 全自动 |
+| `import` | 导入已有模型（可选策略） | 复制 `config.source` 到 `raw/<id>.<ext>` | 全自动 |
 
 所有策略的产物统一落到 `raw/<id>.glb`（或 `.fbx` / `.obj`），随后进入**同一条**共享流水线。详见 [10-strategies.md](10-strategies.md)。
 
@@ -90,7 +92,8 @@ SPEC.md §11 的总门禁：
 - [ ] Unity 中**无粉材质**（贴图/Shader 丢失）
 - [ ] Unity 中**无 T-pose**（Avatar 未配置或骨骼命名错位）
 - [ ] Humanoid **Avatar 映射无红项**
-- [ ] `build/<id>/manifest.json` 记录各阶段状态与 DoD 结果
+- [ ] `build/<id>/manifest.json` 记录各阶段状态，且**六阶段全为 `ok`**（`assetctl validate` 的 DoD 门禁）
+- [ ] `assetctl doctor` 工具链报告通过（Go / Blender 5.2 / 供应商+DEFAULT / 脚本齐备）
 - [ ] 文档对应清单项已勾选（[70-naming-and-dod.md](70-naming-and-dod.md)）
 
 ## 7. 目录结构
@@ -119,7 +122,7 @@ examples/                       配置与清单示例
 | 文档 | 覆盖 |
 |------|------|
 | [00-overview.md](00-overview.md) | 本文：目标、版本表、多策略、六阶段、资产类型、DoD、目录 |
-| [10-strategies.md](10-strategies.md) | Strategy 接口、三策略对比、tripo 半自动、扩展、切换 |
+| [10-strategies.md](10-strategies.md) | Strategy 接口、三策略对比（tripo DEFAULT）、handoff 三模式、扩展、切换 |
 | [20-stage-01-modeling.md](20-stage-01-modeling.md) | ① 建模：参数化 / Tripo 图生 3D / import |
 | [30-stage-02-topology-uv.md](30-stage-02-topology-uv.md) | ② 拓扑 / UV：面数预算、Decimate、UV、LightmapUV、Seams |
 | [40-stage-03-bake.md](40-stage-03-bake.md) | ③ 烘焙：normal/AO/曲率、高模→低模、命名、Cycles/EEVEE |

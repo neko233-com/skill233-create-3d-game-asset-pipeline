@@ -15,6 +15,10 @@ const (
 	BlenderVersion = "5.2"
 	TripoURL       = "https://studio.tripo3d.com/"
 	DefaultGo      = "1.27"
+
+	// DefaultSupplier is the production modeling supplier. Tripo is a browser
+	// based, human-in-the-loop supplier; see the Handoff mechanism (SPEC.md §3).
+	DefaultSupplier = "tripo"
 )
 
 var assetIDRe = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
@@ -30,8 +34,17 @@ var Stages = []string{
 	"render",
 }
 
-// KnownStrategies lists the built-in modeling strategies. "blender" is the default.
-var KnownStrategies = []string{"blender", "tripo", "import"}
+// KnownStrategies lists the built-in modeling suppliers/strategies. The
+// Supplier == Strategy equivalence is documented in SPEC.md §3; "tripo" is the
+// default production supplier, "blender" (procedural) and "import" are
+// alternatives, and the registry is the extension point for future suppliers.
+var KnownStrategies = []string{"tripo", "blender", "import"}
+
+// HandoffModes enumerates how the (default, semi-automatic) Tripo supplier is
+// fed its export. "manual" is production default (human downloads a GLB),
+// "file" copies an upstream drop, "fixture" generates a deterministic GLB for
+// unattended CI. See SPEC.md §3 and docs/10-strategies.md.
+var HandoffModes = []string{"manual", "file", "fixture"}
 
 type Axes struct {
 	Forward string  `json:"forward"`
@@ -48,6 +61,13 @@ type Modeling struct {
 	Primitive    string  `json:"primitive"`
 	Size         float64 `json:"size"`
 	Subdivisions int     `json:"subdivisions"`
+}
+
+// Handoff describes how the default supplier's model reaches raw/<id>.<ext>.
+// Env overrides: ASSETCTL_TRIPO_HANDOFF (Mode), ASSETCTL_TRIPO_SOURCE (Source).
+type Handoff struct {
+	Mode   string `json:"mode"`
+	Source string `json:"source"`
 }
 
 // Config is the asset.json schema (SPEC.md §7).
@@ -67,13 +87,15 @@ type Config struct {
 	Animations      []string `json:"animations"`
 	Modeling        Modeling `json:"modeling"`
 	Stages          []string `json:"stages"`
+	Handoff         Handoff  `json:"handoff"`
 }
 
-// Default returns a config pre-filled with pipeline defaults.
+// Default returns a config pre-filled with production defaults: Tripo is the
+// default supplier and the handoff is manual (human download step).
 func Default(id string) *Config {
 	return &Config{
 		ID:             id,
-		Strategy:       "blender",
+		Strategy:       DefaultSupplier,
 		Kind:           "prop",
 		Humanoid:       false,
 		ReferenceImage: "raw/" + id + ".png",
@@ -86,6 +108,7 @@ func Default(id string) *Config {
 		Animations:     []string{},
 		Modeling:       Modeling{Primitive: "cube", Size: 1.0, Subdivisions: 2},
 		Stages:         append([]string(nil), Stages...),
+		Handoff:        Handoff{Mode: "manual", Source: ""},
 	}
 }
 
@@ -108,7 +131,7 @@ func Load(path string) (*Config, error) {
 
 func (c *Config) applyDefaults() {
 	if c.Strategy == "" {
-		c.Strategy = "blender"
+		c.Strategy = DefaultSupplier
 	}
 	if c.Kind == "" {
 		c.Kind = "prop"
@@ -149,15 +172,45 @@ func (c *Config) applyDefaults() {
 	if len(c.Stages) == 0 {
 		c.Stages = append([]string(nil), Stages...)
 	}
+	if c.Handoff.Mode == "" {
+		c.Handoff.Mode = "manual"
+	}
 }
 
-// Validate checks the config against SPEC.md invariants.
+// EffectiveHandoff resolves the handoff mode/source, applying env overrides.
+// ASSETCTL_TRIPO_HANDOFF overrides Mode, ASSETCTL_TRIPO_SOURCE overrides Source.
+// An unknown env mode is returned as-is so Validate can reject it.
+func (c *Config) EffectiveHandoff() Handoff {
+	h := c.Handoff
+	if v := os.Getenv("ASSETCTL_TRIPO_HANDOFF"); v != "" {
+		h.Mode = v
+	}
+	if v := os.Getenv("ASSETCTL_TRIPO_SOURCE"); v != "" {
+		h.Source = v
+	}
+	return h
+}
+
+// ValidTextures is the exact PBR channel suffix set (SPEC.md §11), shared
+// with scripts/blender/common.py PBR_SUFFIXES.
+var ValidTextures = []string{"basecolor", "normal", "roughness", "metallic", "ao"}
+
+// Validate checks the config against SPEC.md invariants. It validates the
+// EFFECTIVE handoff (env overrides included), because that is what the Tripo
+// supplier actually consumes; validating only the persisted value lets an
+// invalid ASSETCTL_TRIPO_HANDOFF through into production.
 func (c *Config) Validate() error {
 	if !assetIDRe.MatchString(c.ID) {
 		return fmt.Errorf("invalid asset id %q: want lowercase-kebab (e.g. hero-knight)", c.ID)
 	}
 	if !contains(KnownStrategies, c.Strategy) {
 		return fmt.Errorf("unknown strategy %q (known: %s)", c.Strategy, strings.Join(KnownStrategies, ", "))
+	}
+	if c.Kind != "prop" && c.Kind != "character" {
+		return fmt.Errorf("kind must be prop|character, got %q", c.Kind)
+	}
+	if c.TargetEngine != "unity-urp" {
+		return fmt.Errorf("targetEngine must be unity-urp, got %q", c.TargetEngine)
 	}
 	if c.BlenderVersion != BlenderVersion {
 		return fmt.Errorf("blenderVersion must be %s, got %q", BlenderVersion, c.BlenderVersion)
@@ -168,9 +221,34 @@ func (c *Config) Validate() error {
 	if c.Axes.Forward != "-Z" || c.Axes.Up != "Y" || c.Axes.Scale != 1.0 {
 		return fmt.Errorf("axes must be -Z forward / Y up / scale 1.0 for Unity (SPEC.md §9)")
 	}
-	for _, s := range c.Stages {
-		if !contains(Stages, s) {
-			return fmt.Errorf("unknown stage %q in config (known: %s)", s, strings.Join(Stages, ", "))
+	if c.Budget.MaxTriangles <= 0 || c.Budget.MaxTextureSize <= 0 {
+		return fmt.Errorf("budget must be positive, got %+v", c.Budget)
+	}
+	for _, tex := range c.Textures {
+		if !contains(ValidTextures, tex) {
+			return fmt.Errorf("unknown texture channel %q (known: %s)", tex, strings.Join(ValidTextures, ", "))
+		}
+	}
+	h := c.EffectiveHandoff()
+	if !contains(HandoffModes, h.Mode) {
+		return fmt.Errorf("unknown handoff mode %q (config=%q; env ASSETCTL_TRIPO_HANDOFF may override; known: %s)",
+			h.Mode, c.Handoff.Mode, strings.Join(HandoffModes, ", "))
+	}
+	// A "file" handoff needs a source: handoff.source (or the env override).
+	if h.Mode == "file" && strings.TrimSpace(h.Source) == "" {
+		return fmt.Errorf("handoff mode %q requires handoff.source (or ASSETCTL_TRIPO_SOURCE)", h.Mode)
+	}
+	if c.Strategy == "import" && strings.TrimSpace(c.Source) == "" {
+		return fmt.Errorf("strategy %q requires config.source", c.Strategy)
+	}
+	// The six stages are a FIXED, ordered contract (SPEC.md §4). A partial or
+	// reordered list silently breaks --from / --only resume and the DoD gate.
+	if len(c.Stages) != len(Stages) {
+		return fmt.Errorf("config.stages must contain exactly %d stages, got %d", len(Stages), len(c.Stages))
+	}
+	for i, want := range Stages {
+		if c.Stages[i] != want {
+			return fmt.Errorf("config.stages[%d] = %q, want %q (fixed order)", i, c.Stages[i], want)
 		}
 	}
 	return nil

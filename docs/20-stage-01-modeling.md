@@ -15,17 +15,19 @@
 | 退出码 | `0` 成功；非 `0` 失败，错误写 stderr |
 | 运行环境 | Blender 5.2 内置 Python（`bpy`），`--factory-startup` 容忍 |
 
-三种策略（详见 [10-strategies.md](10-strategies.md)）：
+三种策略 / 供应商（「供应商（Supplier）== 建模策略（Strategy）」，详见 [10-strategies.md](10-strategies.md)）：
 
 | 策略 | 本节对应小节 | 自动化 |
 |------|-------------|--------|
-| `blender`（默认） | §2 参数化建模 | 全自动 |
-| `tripo` | §3 图生 3D | 半自动（人在 https://studio.tripo3d.com/ 回路） |
-| `import` | §4 导入已有模型 | 全自动 |
+| `tripo`（**默认供应商 / DEFAULT**，半自动、人在回路） | §3 图生 3D + §3.0 handoff 三模式 | 半自动（经 `handoff` 可脚本化 / `fixture` 无人值守） |
+| `blender`（可选策略 / CI 基线） | §2 参数化建模 | 全自动 |
+| `import`（可选策略） | §4 导入已有模型 | 全自动 |
 
-## 2. `blender` 策略：Blender 5.2 参数化建模
+**v2 起 `tripo` 是默认生产供应商**（`IsDefault() == true`、`config.Default().Strategy == "tripo"`、`assetctl init` 默认 `--strategy tripo`）；`blender` 参数化建模退居为全自动的可选策略 / CI 基线。默认供应商是半自动的，靠 `asset.json.handoff` 交付机制补齐脚本化能力（见 §3.0）。
 
-默认策略。`scripts/blender/stage_01_modeling.py` 在 Blender 5.2 内置 Python 中运行，按 `asset.json.modeling` 生成基础体块，再规整为 `.blend`。
+## 2. `blender` 策略：Blender 5.2 参数化建模（可选策略 / CI 基线）
+
+一等公民的**可选策略**。`scripts/blender/stage_01_modeling.py` 在 Blender 5.2 内置 Python 中运行，按 `asset.json.modeling` 生成基础体块，再规整为 `.blend`。
 
 配置字段（SPEC.md §7）：
 
@@ -39,7 +41,7 @@
 | `size` | 尺寸（Blender 单位） | `1.0` |
 | `subdivisions` | 细分级别（给后续 Decimate / 高模烘焙留余量） | `2` |
 
-典型用途：块灰模（blockout）、占位资产、CI 回归基线、面数预算的下界测试。它是**唯一 `IsDefault() == true`** 的策略，不需要账号/网络/浏览器。
+典型用途：块灰模（blockout）、占位资产、CI 回归基线、面数预算的下界测试。它是全自动、不需要账号/网络/浏览器的可选策略（`IsDefault() == false`）。
 
 调用约定（由 `assetctl run` 统一发起，不需手工敲）：
 
@@ -51,9 +53,25 @@ blender --background --factory-startup --python scripts/blender/stage_01_modelin
 
 > 脚本必须容忍 `--factory-startup`（不依赖用户偏好、插件、主题）。
 
-## 3. `tripo` 策略：Tripo 图生 3D
+## 3. `tripo` 策略：Tripo 图生 3D（**默认生产供应商 / DEFAULT**）
 
-Tripo 入口统一为 **https://studio.tripo3d.com/**（浏览器端，无需安装）。Go 侧只负责参考图归一化与文件检测，**生成动作在浏览器里人工完成**。
+Tripo 入口统一为 **https://studio.tripo3d.com/**（浏览器端，无需安装，Image-to-3D / Text-to-3D / auto-rig）。它是**默认供应商**：`IsDefault() == true`、`config.Default().Strategy == "tripo"`、`assetctl init` 默认 `--strategy tripo`。Go 侧负责参考图归一化、文件检测与 handoff；**`manual` 模式下生成动作仍在浏览器里人工完成**（半自动、人在回路），但 `file` / `fixture` 模式可跳过人工。
+
+### 3.0 三条 handoff 交付路径（默认供应商可脚本化的关键）
+
+`asset.json` 的 `handoff` 对象：`"handoff": { "mode": "manual", "source": "" }`。`Acquire` 优先级固定：
+
+1. **已存在** `raw/<id>.{glb,gltf,fbx,obj}` 直接采用；
+2. 否则按 **handoff mode** 执行；
+3. 否则回落 **manual 指引**。
+
+| `mode` | 行为 | 命令 / 场景 |
+|--------|------|-------------|
+| `manual`（**默认**） | 人工上传参考图、下载 GLB 到 `raw/<id>.glb`，再 `assetctl run <id> --from modeling` 续跑；**缺文件打印指引并 exit `3`（`ErrManualStepRequired`）** | 生产人工审片 |
+| `file` | 把 `handoff.source`（或环境变量 `ASSETCTL_TRIPO_SOURCE`）复制到 `raw/<id>.<ext>` | `assetctl init <id> --handoff file --source <path>`；上游 job / webhook 落盘了 Tripo 导出 |
+| `fixture` | 生成**确定性最小合法 GLB**（`raw/<id>.glb`），使默认供应商完全无人值守 | `assetctl init <id> --handoff fixture`；环境变量 `ASSETCTL_TRIPO_HANDOFF=fixture` 亦可强制；**CI 用 `--handoff fixture` 才能无人值守** |
+
+环境变量覆盖：`ASSETCTL_TRIPO_HANDOFF`（覆盖 mode）、`ASSETCTL_TRIPO_SOURCE`（覆盖 source）。完整契约见 [10-strategies.md](10-strategies.md) §5 与 [SPEC.md §3A](../SPEC.md)。
 
 ### 3.1 参考图要求（决定生成质量）
 
@@ -90,14 +108,18 @@ assetctl reference prepare concept.png raw/ --size 1024 --bg 808080
 
 ### 3.4 半自动断点续跑
 
-Go 检测 `raw/<id>.glb` 是否就位：
+`manual` 模式下 Go 检测 `raw/<id>.glb` 是否就位；`file` / `fixture` 模式则先复制 / 生成产物再照常跑：
 
 ```bash
-assetctl run <id> --strategy tripo                       # 未就位时给指引并停在该阶段
-assetctl run <id> --strategy tripo --from modeling      # 人工下载 GLB 后续跑
-assetctl run <id> --strategy tripo --only modeling      # 只补跑阶段 1
-assetctl run <id> --strategy tripo --from modeling --dry-run   # 演练
+assetctl run <id>                                        # 默认 strategy=tripo；manual 缺文件时给指引并 exit 3
+assetctl run <id> --from modeling                        # 人工下载 GLB（或从 topology-uv 等断点）后续跑
+assetctl run <id> --from topology-uv                     # 尤其常用：跳过建模，从拓扑/UV 续跑
+assetctl run <id> --only modeling                        # 只补跑阶段 1
+assetctl run <id> --from modeling --dry-run              # 演练
+ASSETCTL_TRIPO_HANDOFF=fixture assetctl run <id>         # CI 强制无人值守
 ```
+
+每个真实阶段执行后 runner 还会校验声明的 `--out` 文件确实存在（防静默失败）。`--from` / `--only` 断点续跑详见 [80-cli-reference.md](80-cli-reference.md)。
 
 ### 3.5 常见坑
 

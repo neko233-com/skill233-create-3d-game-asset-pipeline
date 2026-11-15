@@ -67,7 +67,7 @@ AGENTS.md 规定使用 Conventional Commits：
 
 ## 6. Definition of Done（SPEC.md §11）
 
-总门禁一句话：**`assetctl validate` 通过 + Unity 中无粉材质、无 T-pose、Avatar 映射无红项。**
+总门禁一句话：**`assetctl validate` 通过（含 `manifest.json` 六阶段全 `ok`）+ `assetctl doctor` 通过 + Unity 中无粉材质、无 T-pose、Avatar 映射无红项。**
 
 ### 6.1 逐项 DoD 勾选清单
 
@@ -88,8 +88,9 @@ AGENTS.md 规定使用 Conventional Commits：
 - [ ] clip 循环标记正确（idle/walk/run 循环，attack/hurt/death 单次）
 
 **交付与引擎内验收**
-- [ ] `build/<id>/manifest.json` 记录各阶段状态 + DoD 结果
+- [ ] `build/<id>/manifest.json` 记录各阶段状态 + DoD 结果，且**六阶段全为 `ok`**（`assetctl validate` 的 DoD 门禁）
 - [ ] `preview.png` 已生成（[43](43-stage-06-render-composite.md)）
+- [ ] **`assetctl doctor` 工具链报告通过**（Go 1.27 / Blender 5.2 或 `ASSETCTL_BLENDER` / 供应商+DEFAULT / Tripo URL / axes / 六阶段脚本齐备）
 - [ ] **`assetctl validate` 通过**
 - [ ] Unity 中**无粉材质**（贴图 / Shader 丢失）
 - [ ] Unity 中**无 T-pose**（Rig → Humanoid、Avatar 配置正确）
@@ -120,8 +121,8 @@ assetctl validate build/hero-knight --expect-humanoid --expect-textures
 - 资产 ID 符合小写连字符正则；
 - 贴图文件存在且后缀符合 §3（`--expect-textures` 时逐张核对 `asset.json.textures`）；
 - `--expect-humanoid` 时核对人形标记 / `rig_check` 结果；
-- `manifest.json` 记录的阶段状态与 DoD 结果一致。
+- `manifest.json` 记录的阶段状态与 DoD 结果一致，且**六阶段全部为 `ok`**（任一 `failed` / `skipped` 都不算完成）。
 
-退出码：`0` = 全部通过；非 `0` = 列出问题并写 stderr。CI 直接把它当门禁（[80](80-cli-reference.md)）。
+生产 onboarding 先用 `assetctl doctor` 自检工具链；`go test ./...` 是无需 Blender 5.2 的完整自动化验证（[80](80-cli-reference.md)）。退出码：`0` = 全部通过；非 `0` = 列出问题并写 stderr。CI 直接把它当门禁（[80](80-cli-reference.md)）。
 
 > 校验是**只读**的，不破坏 `build/` 里任何文件；失败时按输出逐项回到对应阶段文档修正，再重跑 `assetctl run --from <stage>` 与 `validate`。

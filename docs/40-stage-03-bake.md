@@ -25,8 +25,8 @@
 | **高模 → 低模（Detail Transfer）** | 把高模（AI 生成原始网格 / 摄影测量 / 细分体）的细节投到阶段 2 减面后的低模 | 游戏运行时只看低模 + 烘焙图，兼顾面数预算与观感 |
 
 典型来源：
-- `tripo` / `import` 策略的原始高模作为「High」，阶段 2 Decimate 后的低模作为「Low」。
-- `blender` 默认策略的 `subdivisions` 细分体可作为高模源，低模为应用 Decimate 后的结果。
+- `tripo`（默认供应商）/ `import` 策略的原始高模作为「High」，阶段 2 Decimate 后的低模作为「Low」。
+- `blender` 可选策略的 `subdivisions` 细分体可作为高模源，低模为应用 Decimate 后的结果。
 
 > 烘焙依赖阶段 2 的**主 UV 无重叠**与**足够的 Island Margin / padding**，否则会串色、漏细节。低模与高模需对齐到同一空间（原点/缩放已应用）。
 

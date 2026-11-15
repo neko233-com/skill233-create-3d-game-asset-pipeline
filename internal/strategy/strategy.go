@@ -1,5 +1,7 @@
-// Package strategy implements pluggable modeling strategies for stage 1.
-// Per SPEC.md §3: "blender" is the DEFAULT strategy, "tripo" is one of many.
+// Package strategy implements pluggable modeling suppliers for stage 1.
+// Per SPEC.md §3: "tripo" is the DEFAULT production supplier; "blender" and
+// "import" are alternatives, and the registry is the extension point. The
+// Go type name "Strategy" is kept for compatibility: Supplier == Strategy.
 package strategy
 
 import (
@@ -26,7 +28,8 @@ type RunContext struct {
 
 // AcquireResult describes what stage 1 should consume.
 // InputPath empty => stage_01_modeling.py generates geometry procedurally
-// from config.modeling (the "blender" default strategy).
+// from config.modeling (the "blender" alternative supplier). With the default
+// "tripo" supplier, Acquire returns a real raw/<id>.<ext> path via handoff.
 type AcquireResult struct {
 	InputPath string // raw/<id>.glb / .fbx / .obj, or "" for procedural
 	Note      string // human-readable line for the log
@@ -83,7 +86,7 @@ func All() []Strategy {
 	return out
 }
 
-// DefaultID returns the ID of the default strategy ("blender").
+// DefaultID returns the ID of the default supplier ("tripo").
 func DefaultID() string {
 	for _, s := range All() {
 		if s.IsDefault() {

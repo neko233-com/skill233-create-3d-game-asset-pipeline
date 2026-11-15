@@ -78,17 +78,16 @@ def setup_stage(centre, radius):
 
 def configure_render(asset):
     scene = bpy.context.scene
-    # Prefer EEVEE across Blender 4.2+/5.x; fall back to Workbench in headless.
-    engines = {"BLENDER_EEVEE_NEXT": "BLENDER_EEVEE_NEXT",
-               "BLENDER_EEVEE": "BLENDER_EEVEE",
-               "BLENDER_WORKBENCH": "BLENDER_WORKBENCH"}
+    # Blender 5.x removed BLENDER_EEVEE_NEXT (it is BLENDER_EEVEE again).
+    # See the 5.x API migration table in skills/blender-core/SKILL.md. Dynamic
+    # enums under-report their valid values, so probe by assignment.
     chosen = None
-    for candidate in ("BLENDER_EEVEE_NEXT", "BLENDER_EEVEE", "BLENDER_WORKBENCH"):
+    for candidate in ("BLENDER_EEVEE", "BLENDER_WORKBENCH"):
         try:
             scene.render.engine = candidate
-            chosen = engines.get(candidate, candidate)
+            chosen = candidate
             break
-        except Exception:
+        except (TypeError, ValueError, AttributeError):
             continue
     if chosen is None:
         warn("no render engine available; writing a flat fallback preview")

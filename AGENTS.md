@@ -15,7 +15,9 @@
   - 无头调用：`blender --background --factory-startup --python <script> -- --asset <id> --config <path> --in <prev> --out <out> --blend-out <blend>`。
   - 禁止在文档/脚本中假设其它 Blender 大版本；升级版本必须先改本文件再改脚本。
 - **Tripo：`https://studio.tripo3d.com/`**（浏览器端，图生 3D / 文生 3D / 自动绑定与动画）。
-  - Tripo 是**建模策略之一**，**不是默认策略**；默认策略是 `blender`（见 SPEC.md §3）。
+  - Tripo 是**默认生产供应商（DEFAULT Supplier）**（`IsDefault() == true`、`config.Default().Strategy == "tripo"`、`assetctl init` 默认 `--strategy tripo`），半自动、人在回路；「供应商（Supplier）== 建模策略（Strategy）」，Go `Strategy` 类型不改名（见 SPEC.md §3）。
+  - 通过 `asset.json.handoff` 的 `manual | file | fixture` 三种交付模式（及 `ASSETCTL_TRIPO_HANDOFF` / `ASSETCTL_TRIPO_SOURCE` 环境变量）令默认供应商可脚本化、可无人值守测试；`fixture` 模式是 CI 逃生舱。
+  - `blender`（参数化 blockout）与 `import`（复制已有文件）是一等公民的可选策略；registry 是 `meshy` / `rodin` / `scenario` / 摄影测量等未来供应商的扩展点。
   - 所有 Tripo 相关说明、链接、脚本注释统一使用该 URL，不得写成旧域名或镜像。
 - **参考插件 ACT**：`https://github.com/mrven/Blender-Asset-Creation-Toolset`（GPL-3.0）。
   - 只对齐其行为与参数，**不复制 / 不 vendoring 其源码**，避免 GPL 污染本仓库 MIT 许可。
@@ -65,9 +67,12 @@ Unity 导入后贴图/骨骼/动画均可用（无粉材质、无 T-pose、Avata
 ## 常用命令
 
 ```bash
-go build ./... && go vet ./... && go test ./...
-go run ./cmd/assetctl strategies
-go run ./cmd/assetctl init hero-knight --humanoid
+go build ./... && go vet ./... && go test ./...        # go test ./... 即完整自动化验证，无需装 Blender
+go run ./cmd/assetctl doctor                            # 工具链报告（v2 新增）
+go run ./cmd/assetctl strategies                       # 列出供应商，tripo 标注 DEFAULT
+go run ./cmd/assetctl init hero-knight --humanoid       # 默认 strategy=tripo
+go run ./cmd/assetctl init hero-knight --handoff fixture  # CI 无人值守（默认供应商也能全自动）
 go run ./cmd/assetctl run hero-knight --dry-run          # 只打印命令，不执行
-go run ./cmd/assetctl run hero-knight                    # 真正执行（需 Blender 5.2）
+go run ./cmd/assetctl run hero-knight                    # 真正执行（生产需 Blender 5.2）
+python scripts/verify.py                                 # 一键验证：build/vet/test/py_compile/unittest
 ```

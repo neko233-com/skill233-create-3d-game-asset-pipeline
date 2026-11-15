@@ -1,6 +1,6 @@
 {
   "id": "hero-knight",
-  "strategy": "blender",
+  "strategy": "tripo",
   "kind": "character",
   "humanoid": true,
   "referenceImage": "raw/hero-knight.png",
@@ -8,6 +8,10 @@
   "tripoUrl": "https://studio.tripo3d.com/",
   "blenderVersion": "5.2",
   "targetEngine": "unity-urp",
+  "handoff": {
+    "mode": "manual",
+    "source": ""
+  },
   "axes": {
     "forward": "-Z",
     "up": "Y",
