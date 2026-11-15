@@ -15,7 +15,8 @@ assetctl reference prepare <in.png> <outdir> [--size 1024] [--bg 808080]
 assetctl validate <build-dir> [--expect-humanoid] [--expect-textures]
 assetctl blender <script> [-- --args...]     # 透传 Blender 5.2
 assetctl doctor                              # 工具链报告（v2 新增）
-assetctl verify                              # 一键生产级验证（9 步，Go 1.27 实现，v2.1）
+assetctl skills list|show|run|doctor         # 28 个 Blender skills（v2.2 新增，详见 docs/90-skills.md）
+assetctl verify                              # 一键生产级验证（11 步，Go 1.27 实现，v2.2）
 ```
 
 `assetctl run` 依次执行六阶段，写 `build/<id>/manifest.json`；任一阶段失败即停止并记录状态。`--from` / `--only` 支持断点续跑（Tripo 半自动场景必需，尤其 `--from topology-uv`）。`assetctl init` 默认 `strategy=tripo`、`handoff.mode=manual`；`--supplier` 为 `--strategy` 的别名。
@@ -224,17 +225,19 @@ assetctl doctor
 
 ### 3.10 `assetctl verify`（v2.1 新增，一键验证）
 
-Go 1.27 实现（`internal/verify/verify.go`），**逻辑不在系统 Python 中**；`python scripts/verify.py` 与 `make verify` 都只是兼容转调。9 步按序执行、任一失败即停：
+Go 1.27 实现（`internal/verify/verify.go`），**逻辑不在系统 Python 中**；`python scripts/verify.py` 与 `make verify` 都只是兼容转调。11 步按序执行、任一失败即停：
 
-1. 仓库布局（10 个 `scripts/blender/*.py` + `testing/` harness）
-2. `go.mod` 零第三方依赖 + `go 1.27` 校验
-3. `go build ./...`
-4. `go vet ./...`
-5. `go test ./... -count=1 -coverprofile=coverage.out`（Unix 额外 `-race`；Windows 因 cgo 限制不启用 race；含非 dry-run 六阶段 E2E）
-6. `py_compile` 全部 bpy / 测试脚本
-7. `python -m unittest discover -s testing`（10 个 bpy 模块 + 契约 + mock_bpy）
-8. `assetctl doctor`
-9. CLI 冒烟（version / strategies / stages）
+1. 仓库布局（11 个 `scripts/blender/*.py` + `testing/` harness）
+2. Skills 注册表一致性（`skills.ValidateCatalog`：28 个 SKILL.md / ADAPTATION.md / manifest.json / bpy 分派器）
+3. `go.mod` 零第三方依赖 + `go 1.27` 校验
+4. `gofmt -l` 无未格式化 Go 文件
+5. `go build ./...`
+6. `go vet ./...`
+7. `go test ./... -count=1 -coverprofile=coverage.out`（Unix 额外 `-race`；Windows 因 cgo 限制不启用 race；含非 dry-run 六阶段 E2E）
+8. `py_compile` 全部 bpy / 测试脚本
+9. `python -m unittest discover -s testing`（11 个 bpy 模块 + 28 skills + 契约 + mock_bpy）
+10. `assetctl doctor`
+11. CLI 冒烟（version / strategies / stages）
 
 ```bash
 go run ./cmd/assetctl verify            # 推荐
@@ -244,6 +247,24 @@ ASSETCTL_VERIFY_NO_RACE=1 make verify   # 跳过 race（无 gcc 的 Unix 环境�
 ```
 
 `ASSETCTL_PYTHON` 可指定测试用解释器；CI（`.github/workflows/ci.yml`）在 ubuntu / macos / windows 三平台执行同一命令并上传覆盖率。
+
+### 3.11 `assetctl skills <list|show|run|doctor>`（v2.2 新增，详见 [90-skills.md](90-skills.md)）
+
+```bash
+assetctl skills list [--category <group>] [--json]
+assetctl skills show <skill-id> [--root <dir>]
+assetctl skills run <skill-id> [--asset <id>] [--param k1=v1,k2=v2] [--dry-run] [--blender <path>] [--root <dir>]
+assetctl skills doctor [--root <dir>]
+```
+
+| 子命令 | 行为 | 关键退出码 |
+|--------|------|-----------|
+| `list` | 打印 28 个 skill（id / category / summary）；`--json` 输出 `{count, shown, blenderVersion, license, skills[]}` | 0 |
+| `show` | 打印 catalog 元数据 + `ADAPTATION.md` + `SKILL.md` 前 12 行 | 未知 id → 2 |
+| `run` | 校验参数 → 拉起 Blender 5.2 `skill_run.py` → **复核契约**（schema / stage / skill / operation） | 未知 id/非法 asset id/契约不符 → 2；Blender 缺失 → 1 |
+| `doctor` | 校验 `skills/manifest.json`、28 个 `SKILL.md`/`ADAPTATION.md`、catalog、`skill_run.py` 一致 | 不一致 → 1 |
+
+`run` 的产物：`build/<id>/contracts/skill-<id>.json` + `work/<id>/skills/<id>.blend`；`--param` 为**逗号分隔**的 `k=v` 列表，按键排序拼入 argv（可复现）。`--dry-run` 只打印 Blender 命令行，不需要安装 Blender。
 
 ## 4. 退出码
 

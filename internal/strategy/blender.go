@@ -14,9 +14,11 @@ type BlenderStrategy struct{}
 
 func init() { Register(BlenderStrategy{}) }
 
-func (BlenderStrategy) ID() string          { return "blender" }
-func (BlenderStrategy) Description() string { return "参数化建模（可选策略 / CI baseline）· Blender 5.2 bpy · 全自动" }
-func (BlenderStrategy) IsDefault() bool     { return false }
+func (BlenderStrategy) ID() string { return "blender" }
+func (BlenderStrategy) Description() string {
+	return "参数化建模（可选策略 / CI baseline）· Blender 5.2 bpy · 全自动"
+}
+func (BlenderStrategy) IsDefault() bool { return false }
 
 func (BlenderStrategy) Acquire(ctx *RunContext) (*AcquireResult, error) {
 	c := ctx.Config

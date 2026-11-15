@@ -100,7 +100,8 @@ go run ./cmd/assetctl run hero-knight --from topology-uv   # 断点续跑
 | `assetctl run <id>` | 执行六阶段，写 `build/<id>/manifest.json` |
 | `assetctl reference prepare <in> <out>` | 参考图归一化（纯 Go） |
 | `assetctl validate <build-dir>` | 交付前校验（manifest 六 ok + 契约 SHA-256 + 产物完整性） |
-| `assetctl verify` | 一键生产级验证（Go 实现，9 步；`make verify` / `python scripts/verify.py` 转调） |
+| `assetctl skills list\|show\|run\|doctor` | 28 个 Blender skills：Go 编排 + bpy 执行，产出 `contracts/skill-<id>.json` |
+| `assetctl verify` | 一键生产级验证（Go 实现，11 步；`make verify` / `python scripts/verify.py` 转调） |
 | `assetctl blender <script> [-- --args]` | 透传 Blender 5.2 |
 | `assetctl doctor` | 工具链报告（Go / Blender 5.2 / `ASSETCTL_BLENDER` / 供应商+DEFAULT / Tripo URL / axes / 脚本 / 退出码） |
 
@@ -110,10 +111,11 @@ go run ./cmd/assetctl run hero-knight --from topology-uv   # 断点续跑
 
 - **`go test ./...` 本身就是完整的自动化验证**：`internal/runner` 的 `Launcher` 抽象在生产用 `CommandLauncher`（真实 Blender 5.2），在 CI / 测试用 `ScriptLauncher` 运行 `testing/fake_blender.py`——一个纯标准库的 `bpy` + `mathutils` 模拟器。
 - `fake_blender.py` 通过 `.blend` / `.fbx` 快照在多个阶段进程间**持久化场景状态**，用标准库 `zlib` / `struct` 写出**真实 PNG**，并给 FBX 写入真实二进制头；六阶段端到端跑通，**无需安装 Blender 5.2**。
-- `go test ./...` 内含 **非 dry-run 六阶段 E2E**（含 humanoid rig 门禁）与 `--from` 断点续跑；`python -m unittest discover -s testing` 覆盖全部 **10 个 bpy 模块**、契约与 mock_bpy 自身（18 项）。
+- `go test ./...` 内含 **非 dry-run 六阶段 E2E**（含 humanoid rig 门禁）与 `--from` 断点续跑；`python -m unittest discover -s testing` 覆盖全部 **11 个 bpy 模块**、契约、28 个 skills 与 mock_bpy 自身（24 项）。
 - 防静默失败：每个阶段执行后 runner 校验 `--out` 存在；每个阶段写出 `build/<id>/contracts/<stage>.json`（SHA-256 + 字节数 + FBX 七参数），`assetctl validate --expect-contracts` 重新读盘核对。
+- **Skills 子系统**（SPEC.md §8A）：28 个 `skills/<id>/SKILL.md` 照抄 [EL4CTEO/blender-skills](https://github.com/EL4CTEO/blender-skills)（MIT，附 LICENSE 副本），执行由 `internal/skills`（Go 注册表 + 契约复核）驱动单一入口 `scripts/blender/skill_run.py`；`assetctl skills doctor` 校验目录树 / manifest / catalog / dispatcher 一致，`testing/test_skills.py` 在 mock_bpy 下跑通全部 28 个。
 - `assetctl validate` 检查 `manifest.json` 六阶段全 `ok`、契约摘要、产物非零且 PNG/GLB magic 正确；`assetctl doctor` 用于生产 onboarding 自检。
-- **一键验证 `assetctl verify`**（Go 1.27 实现，9 步）：布局 / 零第三方依赖 / build / vet / race+coverage / py_compile / unittest / doctor / CLI 冒烟。`python scripts/verify.py` 与 `make verify` 都只是转调它。
+- **一键验证 `assetctl verify`**（Go 1.27 实现，11 步）：布局(11 bpy 模块) / skills 注册表 / 零第三方依赖 / gofmt / build / vet / race+coverage / py_compile / unittest / doctor / CLI 冒烟。`python scripts/verify.py` 与 `make verify` 都只是转调它。
 - `.github/workflows/ci.yml`：3-OS 矩阵（ubuntu / macos / windows）+ Go 1.27 + setup-python，上传 `coverage.out`。
 
 ## 六阶段与文档索引
@@ -127,7 +129,7 @@ go run ./cmd/assetctl run hero-knight --from topology-uv   # 断点续跑
 | 5 | Unity 导出 / 同步 | `scripts/blender/stage_05_unity_export.py` | [docs/42-stage-05-unity-export.md](docs/42-stage-05-unity-export.md) |
 | 6 | 渲染合成 | `scripts/blender/stage_06_render.py` | [docs/43-stage-06-render-composite.md](docs/43-stage-06-render-composite.md) |
 
-横切与参考文档：[总览](docs/00-overview.md) · [人形动画](docs/50-humanoid-animation.md) · [ACT 整合](docs/60-act-integration.md) · [语言分工](docs/61-language-split.md) · [命名与 DoD](docs/70-naming-and-dod.md) · [CLI 参考](docs/80-cli-reference.md)。
+横切与参考文档：[总览](docs/00-overview.md) · [人形动画](docs/50-humanoid-animation.md) · [ACT 整合](docs/60-act-integration.md) · [语言分工](docs/61-language-split.md) · [命名与 DoD](docs/70-naming-and-dod.md) · [CLI 参考](docs/80-cli-reference.md) · [28 个 Skills](docs/90-skills.md)。
 
 ## 目录结构
 
@@ -139,11 +141,12 @@ internal/strategy/                 多策略 / 供应商注册表（tripo DEFAUL
 internal/runner/                   六阶段执行 + Launcher 抽象 + manifest.json + rig 门禁
 internal/reference/                参考图归一化（纯 Go）
 internal/validate/                 交付校验（manifest 六 ok + 契约 SHA-256 + 产物完整性）
-internal/verify/                   一键验证（Go 1.27，9 步）
-scripts/blender/                   Blender 5.2 内置 bpy 脚本（10 个模块）
+internal/skills/                   28 个 skills 的 Go 注册表 + 执行 + 契约复核
+internal/verify/                   一键验证（Go 1.27，11 步）
+scripts/blender/                   Blender 5.2 内置 bpy 脚本（11 个模块，含 skill_run.py 调度器）
 scripts/verify.py                  一键验证兼容 shim（转调 assetctl verify）
-testing/                           mock_bpy.py / fake_blender.py / harness.py / 阶段级 unittest
-skills/                            28 个参考 skills（MIT）+ Go/bpy 适配
+testing/                           mock_bpy.py / fake_blender.py / harness.py / 阶段级 + skills unittest
+skills/                            28 个照抄的 skills（MIT）+ ADAPTATION.md + manifest.json
 .github/workflows/ci.yml            Win/Linux/macOS 三平台 CI
 docs/                              分阶段文档（00/10/20…80）
 examples/                          asset.json / 提示词 / 清单示例
@@ -158,7 +161,7 @@ Unity Import Settings 勾选 **Bake Axis Conversion**（采用 ACT `"Unity"` 档
 
 ## DoD
 
-`assetctl validate` 通过（含 `manifest.json` 六阶段全 `ok`、契约 SHA-256 一致）+ `assetctl doctor` 通过 + `assetctl verify` 全绿 + Unity 中无粉材质、无 T-pose、Avatar 映射无红项。
+`assetctl validate` 通过（含 `manifest.json` 六阶段全 `ok`、契约 SHA-256 一致）+ `assetctl doctor` 通过 + `assetctl skills doctor` 通过 + `assetctl verify` 全绿 + Unity 中无粉材质、无 T-pose、Avatar 映射无红项。
 
 ## License
 

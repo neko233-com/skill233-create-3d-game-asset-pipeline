@@ -189,7 +189,7 @@ func TestCheckContracts(t *testing.T) {
 			"schema": 1, "asset": id, "stage": stage,
 			"fbxExport": fbxKeys,
 			"outputs": []map[string]interface{}{{
-				"path": "build/" + id + "/" + id + ".fbx",
+				"path":  "build/" + id + "/" + id + ".fbx",
 				"bytes": len(fbx), "sha256": sha,
 			}},
 		}

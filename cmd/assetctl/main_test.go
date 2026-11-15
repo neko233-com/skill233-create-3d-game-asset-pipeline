@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -169,7 +170,7 @@ func writeStageContracts(t *testing.T, dir, id string, fbx []byte) {
 			"apply_unit_scale": true, "add_leaf_bones": false, "path_mode": "COPY",
 		},
 		"outputs": []map[string]interface{}{{
-			"path": "build/" + id + "/" + id + ".fbx",
+			"path":  "build/" + id + "/" + id + ".fbx",
 			"bytes": len(fbx), "sha256": sum,
 		}},
 	}
@@ -230,5 +231,135 @@ func TestCmdDoctor(t *testing.T) {
 	// A directory lacking scripts/blender is a genuine repo defect.
 	if err := dispatch([]string{"doctor", "--root", t.TempDir()}); err == nil {
 		t.Fatal("doctor must fail when stage scripts are missing")
+	}
+}
+
+func TestParseParamString(t *testing.T) {
+	got := parseParamString("supplier=tripo, maxTriangles=30000 ,bad, =x")
+	if got["supplier"] != "tripo" || got["maxTriangles"] != "30000" || len(got) != 2 {
+		t.Fatalf("parseParamString = %v", got)
+	}
+}
+
+func TestCmdSkillsCLI(t *testing.T) {
+	root := repoRoot(t)
+	for _, args := range [][]string{
+		{"skills", "list"},
+		{"skills", "list", "--category", "qa"},
+		{"skills", "list", "--json"},
+		{"skills", "show", "blender-core", "--root", root},
+		{"skills", "doctor", "--root", root},
+		{"skills", "run", "blender-core", "--dry-run", "--asset", "hero-knight",
+			"--root", root, "--param", "supplier=tripo,maxTriangles=30000"},
+	} {
+		if err := dispatch(args); err != nil {
+			t.Fatalf("dispatch(%v): %v", args, err)
+		}
+	}
+	for _, args := range [][]string{
+		{"skills", "show", "blender-nope", "--root", root},
+		{"skills", "run", "blender-nope", "--dry-run", "--root", root},
+		{"skills", "doctor", "--root", t.TempDir()},
+		{"skills", "bogus"},
+	} {
+		if err := dispatch(args); err == nil {
+			t.Fatalf("dispatch(%v) should fail", args)
+		}
+	}
+}
+
+func TestCmdSkillsListJSON(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := dispatch([]string{"skills", "list", "--json"}); err != nil {
+			t.Fatalf("skills list --json: %v", err)
+		}
+	})
+	var doc struct {
+		Count          int    `json:"count"`
+		Shown          int    `json:"shown"`
+		BlenderVersion string `json:"blenderVersion"`
+		Skills         []struct {
+			ID        string   `json:"id"`
+			Category  string   `json:"category"`
+			Operation string   `json:"operation"`
+			Stages    []string `json:"stages"`
+		} `json:"skills"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("skills list --json is not valid JSON: %v\n%s", err, out)
+	}
+	if doc.Count != 28 || doc.Shown != 28 || len(doc.Skills) != 28 {
+		t.Fatalf("count=%d shown=%d skills=%d, want 28", doc.Count, doc.Shown, len(doc.Skills))
+	}
+	// Only Blender 5.2 is a supported target (SPEC.md §2).
+	if doc.BlenderVersion != "5.2" {
+		t.Fatalf("blenderVersion = %q, want 5.2", doc.BlenderVersion)
+	}
+	seen := map[string]bool{}
+	for _, s := range doc.Skills {
+		if s.ID == "" || s.Category == "" || s.Operation == "" || s.Stages == nil {
+			t.Fatalf("incomplete skill row: %+v", s)
+		}
+		if seen[s.ID] {
+			t.Fatalf("duplicate skill id %q", s.ID)
+		}
+		seen[s.ID] = true
+	}
+	// --category must filter and keep the JSON envelope valid.
+	filtered := captureStdout(t, func() {
+		if err := dispatch([]string{"skills", "list", "--json", "--category", "rigging"}); err != nil {
+			t.Fatalf("skills list --category: %v", err)
+		}
+	})
+	var fdoc struct {
+		Count  int `json:"count"`
+		Shown  int `json:"shown"`
+		Skills []struct {
+			Category string `json:"category"`
+		} `json:"skills"`
+	}
+	if err := json.Unmarshal([]byte(filtered), &fdoc); err != nil {
+		t.Fatalf("filtered JSON invalid: %v", err)
+	}
+	if fdoc.Count != 28 || fdoc.Shown == 0 || fdoc.Shown == 28 || fdoc.Shown != len(fdoc.Skills) {
+		t.Fatalf("filtered count=%d shown=%d rows=%d", fdoc.Count, fdoc.Shown, len(fdoc.Skills))
+	}
+	for _, s := range fdoc.Skills {
+		if s.Category != "rigging" {
+			t.Fatalf("category filter leaked %q", s.Category)
+		}
+	}
+}
+
+// captureStdout runs fn with os.Stdout redirected and returns what was written.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := os.Stdout
+	os.Stdout = w
+	done := make(chan string, 1)
+	go func() {
+		buf := new(strings.Builder)
+		_, _ = io.Copy(buf, r)
+		done <- buf.String()
+	}()
+	defer func() { os.Stdout = orig }()
+	fn()
+	_ = w.Close()
+	os.Stdout = orig
+	return <-done
+}
+
+func TestReorderFlagsKeepsSkillsSubcommand(t *testing.T) {
+	got := reorderFlags([]string{"skills", "run", "blender-core", "--asset", "hero", "--dry-run"})
+	want := []string{"skills", "run", "-asset", "hero", "-dry-run", "blender-core"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("reorderFlags(skills) = %v, want %v", got, want)
+	}
+	if !flagTakesValue("-category") || !flagTakesValue("-param") {
+		t.Fatal("new value flags must be registered in flagTakesValue")
 	}
 }

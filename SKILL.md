@@ -76,14 +76,19 @@ description: 游戏美术管线向的 3D 游戏资产生产流水线：Go 1.27 �
 ```bash
 # 构建与自测（go test ./... 即完整自动化验证，无需装 Blender）
 go build ./... && go vet ./... && go test ./...   # 含非 dry-run 六阶段 E2E
-python -m unittest discover -s testing           # 10 个 bpy 模块 + 契约 + mock_bpy
+python -m unittest discover -s testing           # 11 个 bpy 模块 + 28 skills + 契约 + mock_bpy
 python scripts/verify.py                         # 兼容 shim，实际转调 Go 的 assetctl verify
-go run ./cmd/assetctl verify                     # 一键生产级验证（推荐，9 步）
+go run ./cmd/assetctl verify                     # 一键生产级验证（推荐，11 步）
 
 # 查看供应商 / 六阶段 / 工具链
 go run ./cmd/assetctl strategies                 # tripo 标注 DEFAULT
 go run ./cmd/assetctl stages
 go run ./cmd/assetctl doctor                     # 工具链报告
+
+# 28 个 Blender skills（Go 编排 + bpy 执行，SPEC.md §8A）
+go run ./cmd/assetctl skills list                # id / category / summary
+go run ./cmd/assetctl skills doctor              # 注册表一致性
+go run ./cmd/assetctl skills run blender-retopology-uv --asset hero-knight
 
 # 生产：默认供应商 manual handoff（人工下载 GLB）
 go run ./cmd/assetctl init hero-knight --humanoid --kind character
@@ -109,6 +114,7 @@ go run ./cmd/assetctl validate build/hero-knight --expect-humanoid --expect-text
 - 资产 ID 小写连字符；坐标 `-Z forward / Y up / scale 1.0`；FBX + PBR 贴图交付。
 - 导出参数对齐 ACT `"Unity"` 档（支持动画）；ACT 为 GPL-3.0，**只引用不 vendoring**，本仓库 MIT。
 - 任何版本 / URL 变更先改 `AGENTS.md`；架构变更先改 `SPEC.md`。
-- 六阶段各写出 `build/<id>/contracts/<stage>.json`（SHA-256 + 字节数 + FBX 七参数），`assetctl validate` 默认重算校验；10 个 bpy 模块均可在 mock_bpy 下独立执行（SPEC.md §5A）。
+- 六阶段各写出 `build/<id>/contracts/<stage>.json`（SHA-256 + 字节数 + FBX 七参数），`assetctl validate` 默认重算校验；11 个 bpy 模块（含 `skill_run.py`）均可在 mock_bpy 下独立执行（SPEC.md §5A）。
 - 一键验证用 `assetctl verify`（Go 实现）；系统 Python 仅用于测试 harness，不进入交付流水线。
-- 文档索引见 [docs/00-overview.md](docs/00-overview.md)。
+- 文档索引见 [docs/00-overview.md](docs/00-overview.md)；28 个 Skills 见 [docs/90-skills.md](docs/90-skills.md)。
+- Skills 子系统（SPEC.md §8A）：`skills/<id>/SKILL.md`（照抄 EL4CTEO/blender-skills，MIT）+ Go 注册表 `internal/skills` + 单一 bpy 入口 `scripts/blender/skill_run.py`，每个 skill 产出 `build/<id>/contracts/skill-<id>.json`。

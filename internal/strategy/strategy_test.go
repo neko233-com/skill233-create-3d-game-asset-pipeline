@@ -229,7 +229,9 @@ func TestFixtureGLBContainsRealTriangle(t *testing.T) {
 		t.Fatalf("BIN chunk = %d bytes, want 44 (9 floats + 3 uint16 + 2 pad)", binLen)
 	}
 	var doc struct {
-		Asset struct{ Version string `json:"version"` } `json:"asset"`
+		Asset struct {
+			Version string `json:"version"`
+		} `json:"asset"`
 		Nodes []struct {
 			Name string `json:"name"`
 			Mesh int    `json:"mesh"`
@@ -244,8 +246,8 @@ func TestFixtureGLBContainsRealTriangle(t *testing.T) {
 			ByteLength int `json:"byteLength"`
 		} `json:"buffers"`
 		Accessors []struct {
-			ComponentType int `json:"componentType"`
-			Count         int `json:"count"`
+			ComponentType int    `json:"componentType"`
+			Count         int    `json:"count"`
 			Type          string `json:"type"`
 		} `json:"accessors"`
 	}

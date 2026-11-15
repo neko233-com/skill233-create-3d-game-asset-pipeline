@@ -47,8 +47,10 @@ jobs:
           path: coverage.out
           if-no-files-found: warn
 
-      - name: Confirm default supplier contract
+      - name: Confirm default supplier + skills registry contract
         shell: bash
         run: |
           go run ./cmd/assetctl strategies | grep -E 'tripo.*YES'
           go run ./cmd/assetctl stages | grep -c . | grep -x 6
+          go run ./cmd/assetctl skills doctor
+          go run ./cmd/assetctl skills list --json | grep -q '"count": 28'

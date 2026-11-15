@@ -4,7 +4,7 @@
 
 GO ?= go
 
-.PHONY: all build vet test race coverage e2e verify doctor skills clean
+.PHONY: all build vet test race coverage e2e verify doctor skills skills-doctor clean
 
 all: verify
 
@@ -33,7 +33,10 @@ doctor:
 	$(GO) run ./cmd/assetctl doctor
 
 skills:
-	@echo "参考 skills 文档见 skills/README.md；执行入口由 assetctl skills 提供。"
+	$(GO) run ./cmd/assetctl skills list
+
+skills-doctor:
+	$(GO) run ./cmd/assetctl skills doctor
 
 # Only removes generated pipeline artefacts inside THIS repo; never touches
 # user directories. Assets configs under assets/ are preserved.

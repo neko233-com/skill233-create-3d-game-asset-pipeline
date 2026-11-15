@@ -78,9 +78,10 @@ def setup_stage(centre, radius):
 
 def configure_render(asset):
     scene = bpy.context.scene
-    # Blender 5.x removed the 4.x EEVEE_NEXT engine id (it is BLENDER_EEVEE).
-    # See the 5.x API migration table in skills/blender-core/SKILL.md. Dynamic
-    # enums under-report their valid values, so probe by assignment.
+    # Blender 5.2 exposes exactly one EEVEE id: BLENDER_EEVEE. The pre-5.x
+    # "_NEXT" variant was removed, so it is never probed here (docs/61 §4.2 +
+    # skills/blender-core/SKILL.md migration table). Engine enums are dynamic,
+    # so capability is detected by assignment instead of by inspection.
     chosen = None
     for candidate in ("BLENDER_EEVEE", "BLENDER_WORKBENCH"):
         try:

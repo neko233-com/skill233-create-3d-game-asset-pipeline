@@ -183,9 +183,9 @@ func checkContracts(dir string, require bool) []string {
 			continue
 		}
 		var c struct {
-			Schema    int    `json:"schema"`
-			Asset     string `json:"asset"`
-			Stage     string `json:"stage"`
+			Schema    int                    `json:"schema"`
+			Asset     string                 `json:"asset"`
+			Stage     string                 `json:"stage"`
 			FBXExport map[string]interface{} `json:"fbxExport"`
 			Outputs   []struct {
 				Path   string `json:"path"`

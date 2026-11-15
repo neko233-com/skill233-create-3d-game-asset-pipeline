@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -15,12 +16,13 @@ import (
 	"github.com/neko233-com/skill233-create-3d-game-asset-pipeline/internal/config"
 	"github.com/neko233-com/skill233-create-3d-game-asset-pipeline/internal/reference"
 	"github.com/neko233-com/skill233-create-3d-game-asset-pipeline/internal/runner"
+	"github.com/neko233-com/skill233-create-3d-game-asset-pipeline/internal/skills"
 	"github.com/neko233-com/skill233-create-3d-game-asset-pipeline/internal/strategy"
 	"github.com/neko233-com/skill233-create-3d-game-asset-pipeline/internal/validate"
 	"github.com/neko233-com/skill233-create-3d-game-asset-pipeline/internal/verify"
 )
 
-const version = "assetctl 2.0.0 (go1.27, blender5.2, tripo=https://studio.tripo3d.com/, default-supplier=tripo)"
+const version = "assetctl 2.2.0 (go1.27, blender5.2, tripo=https://studio.tripo3d.com/, default-supplier=tripo, skills=28)"
 
 // reorderFlags moves leading flag tokens (and their values) ahead of the
 // positional arguments so Go's flag.FlagSet can parse them regardless of
@@ -41,6 +43,13 @@ func reorderFlags(args []string) []string {
 	if args[0] == "reference" && len(rest) > 0 && rest[0] == "prepare" {
 		head = append(head, "prepare")
 		rest = rest[1:]
+	}
+	if args[0] == "skills" && len(rest) > 0 {
+		switch rest[0] {
+		case "list", "show", "run", "doctor":
+			head = append(head, rest[0])
+			rest = rest[1:]
+		}
 	}
 	flags := []string{}
 	pos := []string{}
@@ -71,7 +80,8 @@ func reorderFlags(args []string) []string {
 func flagTakesValue(name string) bool {
 	switch name {
 	case "-strategy", "-supplier", "-kind", "-root", "-from", "-only",
-		"-blender", "-size", "-bg", "-handoff", "-source":
+		"-blender", "-size", "-bg", "-handoff", "-source",
+		"-asset", "-param", "-config", "-skill", "-category":
 		return true
 	}
 	return false
@@ -118,6 +128,8 @@ func dispatch(args []string) error {
 		return cmdValidate(args[1:])
 	case "doctor":
 		return cmdDoctor(args[1:])
+	case "skills":
+		return cmdSkills(args[1:])
 	case "verify":
 		return cmdVerify(args[1:])
 	case "blender":
@@ -143,6 +155,7 @@ Commands:
   reference prepare <in> <out>  归一化参考图（纯 Go，无第三方依赖）
   validate <build-dir>          交付前校验 (DoD，含 manifest 六阶段全 ok)
   doctor                        工具链 / 供应商 / 脚本齐备性报告
+  skills list|show|run|doctor   28 个 Blender skills（Go 编排 + bpy 执行）
   verify                        一键验证（build/vet/race/coverage/阶段测试/doctor）
   blender <script> [-- args...] 透传 Blender 5.2
 
@@ -394,6 +407,173 @@ func cmdDoctor(args []string) error {
 	fmt.Printf("  Stage scripts     : OK (%d files in %s)\n", len(want), scripts)
 	fmt.Println("[doctor] OK (no fatal repo defects)")
 	return nil
+}
+
+// cmdSkills exposes the 28 registered Blender workflows (SPEC.md §3B).
+func cmdSkills(args []string) error {
+	if len(args) == 0 {
+		fmt.Print(`usage: assetctl skills <list|show|run|doctor> [flags]
+  list   [--category <group>] [--json]  列出全部已注册 skills
+  show   <skill-id>                 打印适配说明与原始 SKILL.md frontmatter
+  run    <skill-id> [--asset <id>] [--param k1=v1,k2=v2] [--dry-run]
+  doctor                           校验 Go 注册表 / manifest.json / SKILL.md / bpy 分派器一致
+`)
+		return nil
+	}
+	switch args[0] {
+	case "list":
+		return cmdSkillsList(args[1:])
+	case "show":
+		return cmdSkillsShow(args[1:])
+	case "run":
+		return cmdSkillsRun(args[1:])
+	case "doctor":
+		return cmdSkillsDoctor(args[1:])
+	default:
+		return fmt.Errorf("unknown skills subcommand %q", args[0])
+	}
+}
+
+func cmdSkillsList(args []string) error {
+	fs := flag.NewFlagSet("skills list", flag.ContinueOnError)
+	category := fs.String("category", "", "filter by category")
+	asJSON := fs.Bool("json", false, "emit machine-readable JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	type row struct {
+		ID        string   `json:"id"`
+		Category  string   `json:"category"`
+		Operation string   `json:"operation"`
+		Summary   string   `json:"summary"`
+		Stages    []string `json:"stages"`
+	}
+	rows := make([]row, 0, skills.Count())
+	for _, s := range skills.Catalog {
+		if *category != "" && s.Category != *category {
+			continue
+		}
+		stages := s.Stages
+		if stages == nil {
+			stages = []string{}
+		}
+		rows = append(rows, row{s.ID, s.Category, s.Operation, s.Summary, stages})
+	}
+	if *asJSON {
+		payload := map[string]interface{}{
+			"count":          skills.Count(),
+			"shown":          len(rows),
+			"blenderVersion": config.BlenderVersion,
+			"license":        "MIT (skills/SKILL.md copied from EL4CTEO/blender-skills)",
+			"skills":         rows,
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(payload)
+	}
+	fmt.Printf("registered skills: %d (source skills/manifest.json, MIT; Blender %s)\n",
+		skills.Count(), config.BlenderVersion)
+	for _, r := range rows {
+		fmt.Printf("  %-34s %-12s %s\n", r.ID, r.Category, r.Summary)
+	}
+	fmt.Printf("shown: %d\n", len(rows))
+	return nil
+}
+
+func cmdSkillsShow(args []string) error {
+	fs := flag.NewFlagSet("skills show", flag.ContinueOnError)
+	root := fs.String("root", ".", "repo root")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("usage: assetctl skills show <skill-id>")
+	}
+	id := fs.Arg(0)
+	s, ok := skills.ByID(id)
+	if !ok {
+		return fmt.Errorf("unknown skill %q", id)
+	}
+	fmt.Printf("skill      : %s\ncategory   : %s\noperation  : %s\nsummary    : %s\nstages     : %v\n",
+		s.ID, s.Category, s.Operation, s.Summary, s.Stages)
+	for _, name := range []string{"ADAPTATION.md", "SKILL.md"} {
+		p := filepath.Join(*root, "skills", id, name)
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		lines := strings.Split(string(data), "\n")
+		if name == "SKILL.md" && len(lines) > 12 {
+			lines = append(lines[:12], "  ... (原文见 skills/"+id+"/SKILL.md)")
+		}
+		fmt.Printf("\n--- %s ---\n%s\n", name, strings.Join(lines, "\n"))
+	}
+	return nil
+}
+
+func cmdSkillsRun(args []string) error {
+	fs := flag.NewFlagSet("skills run", flag.ContinueOnError)
+	asset := fs.String("asset", "skill-probe", "asset id (contracts go to build/<id>/contracts/)")
+	root := fs.String("root", ".", "repo root")
+	dry := fs.Bool("dry-run", false, "print the blender command, do not execute")
+	blenderExe := fs.String("blender", "", "path to Blender 5.2 executable")
+	param := fs.String("param", "", "comma-separated key=value params for the bpy operation")
+	configPath := fs.String("config", "", "asset.json path (default assets/<id>/asset.json)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return errors.New("usage: assetctl skills run <skill-id> [--asset <id>] [--param k=v,...] [--dry-run]")
+	}
+	res, err := skills.Run(skills.Options{
+		RootDir:    *root,
+		SkillID:    fs.Arg(0),
+		AssetID:    *asset,
+		ConfigPath: *configPath,
+		Params:     parseParamString(*param),
+		DryRun:     *dry,
+		BlenderExe: *blenderExe,
+		ScriptsDir: filepath.Join(*root, "scripts", "blender"),
+		Stdout:     os.Stdout,
+		Stderr:     os.Stderr,
+	})
+	if err != nil {
+		return err
+	}
+	if *dry {
+		return nil
+	}
+	fmt.Printf("[skills] %s OK (%s) -> %s\n", res.SkillID, res.Operation, res.ContractPath)
+	return nil
+}
+
+func cmdSkillsDoctor(args []string) error {
+	fs := flag.NewFlagSet("skills doctor", flag.ContinueOnError)
+	root := fs.String("root", ".", "repo root")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if err := skills.ValidateCatalog(*root); err != nil {
+		return err
+	}
+	fmt.Printf("[skills] OK: %d skills, catalog/manifest/SKILL.md/ADAPTATION.md/bpy dispatcher consistent\n",
+		skills.Count())
+	return nil
+}
+
+func parseParamString(s string) map[string]string {
+	out := map[string]string{}
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(part, "=")
+		if ok && strings.TrimSpace(k) != "" {
+			out[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		}
+	}
+	return out
 }
 
 // cmdVerify runs the one-shot production verification gate (SPEC.md §3A.3).

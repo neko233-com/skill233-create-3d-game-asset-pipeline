@@ -72,22 +72,22 @@ type Handoff struct {
 
 // Config is the asset.json schema (SPEC.md §7).
 type Config struct {
-	ID              string   `json:"id"`
-	Strategy        string   `json:"strategy"`
-	Kind            string   `json:"kind"`
-	Humanoid        bool     `json:"humanoid"`
-	ReferenceImage  string   `json:"referenceImage"`
-	Source          string   `json:"source"`
-	TripoURL        string   `json:"tripoUrl"`
-	BlenderVersion  string   `json:"blenderVersion"`
-	TargetEngine    string   `json:"targetEngine"`
-	Axes            Axes     `json:"axes"`
-	Budget          Budget   `json:"budget"`
-	Textures        []string `json:"textures"`
-	Animations      []string `json:"animations"`
-	Modeling        Modeling `json:"modeling"`
-	Stages          []string `json:"stages"`
-	Handoff         Handoff  `json:"handoff"`
+	ID             string   `json:"id"`
+	Strategy       string   `json:"strategy"`
+	Kind           string   `json:"kind"`
+	Humanoid       bool     `json:"humanoid"`
+	ReferenceImage string   `json:"referenceImage"`
+	Source         string   `json:"source"`
+	TripoURL       string   `json:"tripoUrl"`
+	BlenderVersion string   `json:"blenderVersion"`
+	TargetEngine   string   `json:"targetEngine"`
+	Axes           Axes     `json:"axes"`
+	Budget         Budget   `json:"budget"`
+	Textures       []string `json:"textures"`
+	Animations     []string `json:"animations"`
+	Modeling       Modeling `json:"modeling"`
+	Stages         []string `json:"stages"`
+	Handoff        Handoff  `json:"handoff"`
 }
 
 // Default returns a config pre-filled with production defaults: Tripo is the

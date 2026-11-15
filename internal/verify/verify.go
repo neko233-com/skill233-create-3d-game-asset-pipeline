@@ -20,6 +20,7 @@ import (
 
 	"github.com/neko233-com/skill233-create-3d-game-asset-pipeline/internal/config"
 	"github.com/neko233-com/skill233-create-3d-game-asset-pipeline/internal/runner"
+	"github.com/neko233-com/skill233-create-3d-game-asset-pipeline/internal/skills"
 )
 
 // StepResult is one check in the verification report.
@@ -62,8 +63,10 @@ func Run(root string, stdout, stderr io.Writer) (*Report, error) {
 	pyFiles := pythonFiles(abs)
 
 	steps := []step{
-		{"repo layout (10 bpy scripts + harness)", func() error { return checkLayout(abs) }},
+		{"repo layout (11 bpy modules + harness)", func() error { return checkLayout(abs) }},
+		{"skills registry (28 docs + Go catalog + bpy)", func() error { return skills.ValidateCatalog(abs) }},
 		{"go.mod: zero third-party dependencies", func() error { return checkGoMod(abs) }},
+		{"gofmt -l (no unformatted Go files)", func() error { return checkGofmt(abs) }},
 		{"go build ./...", func() error { return command(abs, "go", "build", "./...") }},
 		{"go vet ./...", func() error { return command(abs, "go", "vet", "./...") }},
 		{"go test ./... (race + coverage on Unix)", func() error { return goTest(abs) }},
@@ -176,11 +179,30 @@ func pyCompile(root, py string, files []string) error {
 	return nil
 }
 
+// checkGofmt fails when any tracked Go file is not gofmt-clean. Formatting is
+// part of the production gate: an unformatted diff means the author skipped a
+// local step, which historically correlates with un-run tests.
+func checkGofmt(root string) error {
+	cmd := exec.Command("gofmt", "-l", ".")
+	cmd.Dir = root
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("gofmt -l: %w\n%s", err, buf.String())
+	}
+	if out := strings.TrimSpace(buf.String()); out != "" {
+		return fmt.Errorf("unformatted Go files (run `gofmt -w`):\n%s", out)
+	}
+	return nil
+}
+
 func checkLayout(root string) error {
 	want := []string{
 		"common.py", "stage_01_modeling.py", "stage_02_topology_uv.py",
 		"stage_03_bake.py", "stage_04_pbr.py", "stage_05_unity_export.py",
-		"stage_06_render.py", "rig_check.py", "humanoid_rig.py", "tripo_to_unity.py",
+		"stage_06_render.py", "rig_check.py", "humanoid_rig.py",
+		"tripo_to_unity.py", "skill_run.py",
 	}
 	for _, name := range want {
 		p := filepath.Join(root, "scripts", "blender", name)

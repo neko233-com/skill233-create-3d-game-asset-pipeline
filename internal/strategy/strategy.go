@@ -21,7 +21,7 @@ var ErrManualStepRequired = errors.New("manual step required")
 
 // RunContext carries everything a strategy needs for one asset run.
 type RunContext struct {
-	RootDir string       // repo root
+	RootDir string // repo root
 	Config  *config.Config
 	DryRun  bool
 }

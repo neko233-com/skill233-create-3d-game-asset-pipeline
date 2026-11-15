@@ -134,3 +134,4 @@ examples/                       配置与清单示例
 | [61-language-split.md](61-language-split.md) | 语言分工：Go 1.27 / Blender 内置 Python / 系统 Python 3.14 |
 | [70-naming-and-dod.md](70-naming-and-dod.md) | 命名规范 + 逐项 DoD + `assetctl validate` |
 | [80-cli-reference.md](80-cli-reference.md) | `assetctl` 完整 CLI 参考 + manifest.json + CI 示例 |
+| [90-skills.md](90-skills.md) | 28 个 Blender Skills：照抄来源、Go CLI、bpy 调度、契约、测试 |

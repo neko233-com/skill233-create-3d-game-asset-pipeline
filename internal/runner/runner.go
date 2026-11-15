@@ -205,9 +205,9 @@ func blenderCandidates(explicit string) []string {
 		if programFiles == "" {
 			programFiles = `C:\Program Files`
 		}
-		for _, v := range []string{"Blender 5.2", "Blender 5.1", "Blender 4.5"} {
-			add(filepath.Join(programFiles, "Blender Foundation", v, "blender.exe"))
-		}
+		// ONLY the 5.2 series is supported (SPEC.md §2); older installs are
+		// deliberately not probed so a stale 4.x can never be picked up.
+		add(filepath.Join(programFiles, "Blender Foundation", "Blender 5.2", "blender.exe"))
 		if local := os.Getenv("LOCALAPPDATA"); local != "" {
 			add(filepath.Join(local, "Programs", "Blender Foundation", "Blender 5.2", "blender.exe"))
 		}

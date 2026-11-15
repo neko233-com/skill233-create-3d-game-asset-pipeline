@@ -9,7 +9,8 @@
 ## 工具链版本（硬性约束）
 
 - **Go：`1.27`** —— 我们自己写的编排代码（CLI、策略、配置、校验、参考图处理）全部 Go 1.27，**零第三方依赖**（仅标准库）。
-- **Blender：`5.2`**（本机安装版本）。
+- **Blender：`5.2`（唯一目标版本，先只做 5.2）**（本机安装版本）。
+  - 只支持 5.2 系列：`asset.json.blenderVersion` 必须是 `"5.2"`，`FindBlender` 只探测 5.2 安装位置与 `PATH`，`CheckBlenderVersion` 要求 `blender --version` 报告 5.2。**不为 5.1 / 4.x 写兼容分支**——旧版本 API 差异只作为迁移提示记录在文档里。
   - Blender 内部脚本用 **Blender 5.2 原生内置 Python（`bpy`）**，原生自带什么 Python 就用什么；不假设系统 Python、不在 Blender 里 `pip install`。
   - 所有脚本以 `bpy` / Blender 5.2 为基准，必须能在 `--factory-startup` 下运行。
   - 无头调用：`blender --background --factory-startup --python <script> -- --asset <id> --config <path> --in <prev> --out <out> --blend-out <blend>`。
@@ -52,11 +53,11 @@
 | `AGENTS.md` | 版本、URL、语言分工的硬性事实 |
 | `SKILL.md` | 可复用 Skill 入口，供其它项目引用本流水线 |
 | `cmd/assetctl/` | Go 1.27 CLI 入口（`assetctl`） |
-| `internal/{config,strategy,runner,reference,validate}/` | Go 编排器：配置、策略注册、六阶段执行、参考图、校验 |
-| `scripts/blender/` | Blender 5.2 内运行的 `bpy` 脚本（10 个：六阶段 + rig_check + humanoid_rig + tripo_to_unity + common） |
-| `internal/verify/` + `scripts/verify.py` | Go 实现的一键验证（9 步）+ 兼容 shim；验证逻辑不在系统 Python 中 |
-| `testing/` | `mock_bpy.py` / `fake_blender.py` / `harness.py` / 阶段级 unittest（仅测试，不进交付） |
-| `skills/` | 参考 EL4CTEO/blender-skills（MIT）的 28 个 SKILL.md 与 Go+bpy 适配（见 skills/README.md） |
+| `internal/{config,strategy,runner,reference,validate,skills,verify}/` | Go 编排器：配置、策略注册、六阶段执行、参考图、校验、skills 注册表、一键验证 |
+| `scripts/blender/` | Blender 5.2 内运行的 `bpy` 脚本（11 个：六阶段 + rig_check + humanoid_rig + tripo_to_unity + common + skill_run） |
+| `internal/verify/` + `scripts/verify.py` | Go 实现的一键验证（11 步）+ 兼容 shim；验证逻辑不在系统 Python 中 |
+| `testing/` | `mock_bpy.py` / `fake_blender.py` / `harness.py` / 阶段级 + skills unittest（仅测试，不进交付） |
+| `skills/` | 照抄 EL4CTEO/blender-skills（MIT）的 28 个 SKILL.md + ADAPTATION.md + `manifest.json`（Go 侧据此校验，见 SPEC.md §8A） |
 | `.github/workflows/ci.yml` | 3-OS 矩阵（Win/Linux/macOS）一键验证 |
 | `docs/` | 分阶段流水线文档（00/10/20…80 编号） |
 | `examples/` | `asset.json`、参考图、Tripo 提示词示例 |
@@ -73,7 +74,10 @@ Unity 导入后贴图/骨骼/动画均可用（无粉材质、无 T-pose、Avata
 ```bash
 go build ./... && go vet ./... && go test ./...        # go test ./... 即完整自动化验证，无需装 Blender
 go run ./cmd/assetctl doctor                            # 工具链报告（v2 新增）
-go run ./cmd/assetctl verify                           # 一键生产级验证（9 步，Go 实现，v2.1）
+go run ./cmd/assetctl skills doctor                     # 28 skills 注册表一致性（v2.2 新增）
+go run ./cmd/assetctl verify                           # 一键生产级验证（11 步，Go 实现，v2.2）
+go run ./cmd/assetctl skills list                       # 列出 28 个 Blender skills
+go run ./cmd/assetctl skills run blender-core --asset hero-knight   # 单跑一个 skill（需 Blender 5.2）
 go run ./cmd/assetctl strategies                       # 列出供应商，tripo 标注 DEFAULT
 go run ./cmd/assetctl init hero-knight --humanoid       # 默认 strategy=tripo
 go run ./cmd/assetctl init hero-knight --handoff fixture  # CI 无人值守（默认供应商也能全自动）

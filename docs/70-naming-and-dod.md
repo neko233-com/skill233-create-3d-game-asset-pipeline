@@ -92,7 +92,8 @@ AGENTS.md 规定使用 Conventional Commits：
 - [ ] `preview.png` 已生成（[43](43-stage-06-render-composite.md)）
 - [ ] **`assetctl doctor` 工具链报告通过**（Go 1.27 / Blender 5.2 或 `ASSETCTL_BLENDER` / 供应商+DEFAULT / Tripo URL / axes / 六阶段脚本齐备）
 - [ ] **`assetctl validate` 通过**（含六份 `contracts/<stage>.json` 的 SHA-256 重算一致、产物非零字节与 PNG/GLB magic 正确）
-- [ ] **`assetctl verify` 9 步全绿**（`go test` 内含非 dry-run 六阶段 E2E；Python 阶段测试覆盖 10 个 bpy 模块）
+- [ ] **`assetctl verify` 11 步全绿**（`go test` 内含非 dry-run 六阶段 E2E；Python 阶段测试覆盖 11 个 bpy 模块与 28 个 skills）
+- [ ] **`assetctl skills doctor` 通过**（28 个 SKILL.md / ADAPTATION.md / manifest.json / bpy 分派器一致）
 - [ ] Unity 中**无粉材质**（贴图 / Shader 丢失）
 - [ ] Unity 中**无 T-pose**（Rig → Humanoid、Avatar 配置正确）
 - [ ] **Avatar 映射无红项**（Configure 里无缺失骨骼）
